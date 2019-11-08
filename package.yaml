@@ -25,6 +25,7 @@ dependencies:
 - lens
 - template-haskell
 - transformers
+- bytestring
 
 library:
   source-dirs: src
