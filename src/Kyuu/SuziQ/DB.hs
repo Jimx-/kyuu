@@ -1,7 +1,7 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 module Kyuu.SuziQ.DB
-        ( DB
-        , Table
+        ( SqDB
+        , SqTable
         , createDB
         , createTable
         , tableInsertTuple
@@ -23,8 +23,8 @@ import           Foreign.C.String               ( CString(..)
 data DBPtr
 data TablePtr
 
-type DB = ForeignPtr DBPtr
-type Table = ForeignPtr TablePtr
+type SqDB = ForeignPtr DBPtr
+type SqTable = ForeignPtr TablePtr
 
 foreign import ccall unsafe "sq_create_db"
   sq_create_db :: CString -> IO (Ptr DBPtr)
@@ -41,7 +41,7 @@ foreign import ccall unsafe "&sq_free_table"
 foreign import ccall unsafe "sq_table_insert_tuple"
   sq_table_insert_tuple :: Ptr TablePtr -> Ptr DBPtr -> Ptr CChar -> Int64 -> IO ()
 
-createDB :: (MonadIO m) => String -> m (Maybe DB)
+createDB :: (MonadIO m) => String -> m (Maybe SqDB)
 createDB rootPath = liftIO $ withCString rootPath $ \cstr -> do
         ptr <- sq_create_db cstr
         if ptr /= nullPtr
@@ -50,7 +50,7 @@ createDB rootPath = liftIO $ withCString rootPath $ \cstr -> do
                         return $ Just foreignPtr
                 else return Nothing
 
-createTable :: (MonadIO m) => DB -> OID -> OID -> m (Maybe Table)
+createTable :: (MonadIO m) => SqDB -> OID -> OID -> m (Maybe SqTable)
 createTable db dbId tableId = liftIO $ withForeignPtr db $ \database -> do
         ptr <- sq_create_table database
                                (fromIntegral dbId)
@@ -61,7 +61,7 @@ createTable db dbId tableId = liftIO $ withForeignPtr db $ \database -> do
                         return $ Just foreignPtr
                 else return Nothing
 
-tableInsertTuple :: (MonadIO m) => Table -> DB -> B.ByteString -> m ()
+tableInsertTuple :: (MonadIO m) => SqTable -> SqDB -> B.ByteString -> m ()
 tableInsertTuple table db tuple = liftIO $ withForeignPtr db $ \database ->
         withForeignPtr table $ \table ->
                 B.useAsCStringLen tuple $ \(buf, len) -> do

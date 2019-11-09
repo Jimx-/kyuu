@@ -26,6 +26,7 @@ dependencies:
 - template-haskell
 - transformers
 - bytestring
+- containers
 
 library:
   source-dirs: src
