@@ -1,6 +1,6 @@
 module Main where
 
-import           Kyuu.SuziQ.Core
+import           Kyuu.SuziQ.Backend
 import           Kyuu.Storage.Backend
 
 import           Kyuu.Prelude
@@ -9,6 +9,8 @@ import           Kyuu.Error
 
 import qualified Data.ByteString               as B
 import           Data.Char                      ( ord )
+
+import           System.IO
 
 packStr = B.pack . map (fromIntegral . ord)
 
