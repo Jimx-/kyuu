@@ -21,11 +21,25 @@ insertTuples i table tuple = if i == 0
                 insertTuple table tuple
                 insertTuples (i - 1) table tuple
 
+scanTable :: (StorageBackend m) => Int -> TableScanIteratorType m -> m Int
+scanTable count iterator = do
+        tuple <- tableScanNext iterator Forward
+        case tuple of
+                (Just tuple) -> do
+                        tData <- getTupleData tuple
+                        liftIO $ print tData
+                        scanTable (count + 1) iterator
+                _ -> return count
+
 prog :: (StorageBackend m) => Kyuu m ()
 prog = do
         table <- createTable 0 0
         let tuple = packStr "hello"
         insertTuples 100 table tuple
+
+        iterator <- beginTableScan table
+        count    <- scanTable 0 iterator
+        liftIO $ print count
 
 main :: IO ()
 main = runSuziQ "testdb" $ runKyuu prog

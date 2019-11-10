@@ -2,6 +2,8 @@
 module Kyuu.SuziQ.FFI
         ( SqDB
         , SqTable
+        , SqTableScanIterator
+        , SqTuple
         , sq_last_error_length
         , sq_last_error_message
         , sq_create_db
@@ -9,6 +11,12 @@ module Kyuu.SuziQ.FFI
         , sq_create_table
         , sq_free_table
         , sq_table_insert_tuple
+        , sq_table_begin_scan
+        , sq_free_table_scan_iterator
+        , sq_table_scan_next
+        , sq_free_tuple
+        , sq_tuple_get_data
+        , sq_tuple_get_data_len
         )
 where
 
@@ -28,9 +36,13 @@ import           Foreign.C.String               ( CString(..)
 
 data DBPtr
 data TablePtr
+data TableScanIteratorPtr
+data TuplePtr
 
 type SqDB = ForeignPtr DBPtr
 type SqTable = ForeignPtr TablePtr
+type SqTableScanIterator = ForeignPtr TableScanIteratorPtr
+type SqTuple = ForeignPtr TuplePtr
 
 foreign import ccall unsafe "sq_last_error_length"
   sq_last_error_length :: IO CInt
@@ -51,4 +63,22 @@ foreign import ccall unsafe "&sq_free_table"
   sq_free_table :: FunPtr (Ptr TablePtr -> IO ())
 
 foreign import ccall unsafe "sq_table_insert_tuple"
-  sq_table_insert_tuple :: Ptr TablePtr -> Ptr DBPtr -> Ptr CChar -> Int64 -> IO CInt
+  sq_table_insert_tuple :: Ptr TablePtr -> Ptr DBPtr -> Ptr CChar -> CInt -> IO CInt
+
+foreign import ccall unsafe "sq_table_begin_scan"
+  sq_table_begin_scan :: Ptr TablePtr -> Ptr DBPtr -> IO (Ptr TableScanIteratorPtr)
+
+foreign import ccall unsafe "&sq_free_table_scan_iterator"
+  sq_free_table_scan_iterator :: FunPtr (Ptr TableScanIteratorPtr -> IO ())
+
+foreign import ccall unsafe "sq_table_scan_next"
+  sq_table_scan_next :: Ptr TableScanIteratorPtr -> Ptr DBPtr -> CInt -> IO (Ptr TuplePtr)
+
+foreign import ccall unsafe "&sq_free_tuple"
+  sq_free_tuple :: FunPtr (Ptr TuplePtr -> IO ())
+
+foreign import ccall unsafe "sq_tuple_get_data_len"
+  sq_tuple_get_data_len :: Ptr TuplePtr -> IO CInt
+
+foreign import ccall unsafe "sq_tuple_get_data"
+  sq_tuple_get_data :: Ptr TuplePtr -> Ptr CChar -> CInt -> IO CInt

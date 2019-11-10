@@ -26,9 +26,12 @@ import           Foreign.C.String               ( CString(..)
                                                 , newCString
                                                 , withCString
                                                 )
+import           Foreign.Marshal.Alloc
 
 instance StorageBackend SuziQ where
         type TableType SuziQ = SqTable
+        type TableScanIteratorType SuziQ = SqTableScanIterator
+        type TupleType SuziQ = SqTuple
         createTable dbId tableId = do
                 db <- getDB
                 sqCreateTable db dbId tableId
@@ -36,6 +39,16 @@ instance StorageBackend SuziQ where
         insertTuple table tuple = do
                 db <- getDB
                 sqInsertTuple table db tuple
+
+        beginTableScan table = do
+                db <- getDB
+                sqBeginTableScan table db
+
+        tableScanNext iterator dir = do
+                db <- getDB
+                sqTableScanNext iterator db dir
+
+        getTupleData = sqTupleGetData
 
 runSuziQ :: String -> SuziQ () -> IO ()
 runSuziQ rootPath prog = do
@@ -54,15 +67,23 @@ runSuziQ rootPath prog = do
                 _ -> putStrLn "cannot create database instance"
 
 
+lastErrorMessage :: (MonadIO m) => m String
+lastErrorMessage = do
+        len <- liftIO sq_last_error_length
+        msg <- liftIO $ allocaBytes (fromIntegral len) $ \ptr -> do
+                len <- sq_last_error_message ptr (fromIntegral len)
+                C.packCString ptr
+        return $ C.unpack msg
+
 lastError :: (MonadIO m) => m SqErr
 lastError = do
-        len <- liftIO sq_last_error_length
-        let msgbuf = C.pack (replicate (fromIntegral len) (chr 0))
-        msg <- liftIO $ C.useAsCStringLen msgbuf $ \(buf, len) -> do
-                len <- sq_last_error_message buf (fromIntegral len)
-                C.packCString buf
-        return (Msg (C.unpack msg))
+        msg <- lastErrorMessage
+        return $ Msg msg
 
+tryGetLastError :: (MonadIO m) => m (Maybe SqErr)
+tryGetLastError = do
+        msg <- lastErrorMessage
+        if null msg then return Nothing else return $ Just (Msg msg)
 
 sqCreateDB :: (MonadIO m) => String -> m (Maybe SqDB)
 sqCreateDB rootPath = liftIO $ withCString rootPath $ \cstr -> do
@@ -107,3 +128,60 @@ sqInsertTuple table db tuple = do
                 else do
                         err <- lastError
                         lerror err
+
+sqBeginTableScan :: SqTable -> SqDB -> SuziQ SqTableScanIterator
+sqBeginTableScan table db = do
+        iterator <- liftIO $ withForeignPtr db $ \database ->
+                withForeignPtr table $ \table -> do
+                        ptr <- sq_table_begin_scan table database
+
+                        if ptr /= nullPtr
+                                then do
+                                        foreignPtr <- newForeignPtr
+                                                sq_free_table_scan_iterator
+                                                ptr
+                                        return $ Just foreignPtr
+                                else return Nothing
+
+        case iterator of
+                (Just iterator) -> return iterator
+                _               -> do
+                        err <- lastError
+                        lerror err
+
+getScanDirection :: ScanDirection -> Int
+getScanDirection Forward  = 0
+getScanDirection Backward = 1
+
+sqTableScanNext
+        :: SqTableScanIterator -> SqDB -> ScanDirection -> SuziQ (Maybe SqTuple)
+sqTableScanNext iterator db dir = do
+        tuple <- liftIO $ withForeignPtr db $ \database ->
+                withForeignPtr iterator $ \iterator -> do
+                        ptr <- sq_table_scan_next
+                                iterator
+                                database
+                                (fromIntegral $ getScanDirection dir)
+
+                        if ptr /= nullPtr
+                                then do
+                                        foreignPtr <- newForeignPtr
+                                                sq_free_tuple
+                                                ptr
+                                        return $ Just foreignPtr
+                                else return Nothing
+
+        case tuple of
+                (Just tuple) -> return $ Just tuple
+                _            -> do
+                        err <- tryGetLastError
+                        case err of
+                                (Just err) -> lerror err
+                                _          -> return Nothing
+
+sqTupleGetData :: SqTuple -> SuziQ B.ByteString
+sqTupleGetData tuple = liftIO $ withForeignPtr tuple $ \tuple -> do
+        len <- sq_tuple_get_data_len tuple
+        liftIO $ allocaBytes (fromIntegral len) $ \ptr -> do
+                len <- sq_tuple_get_data tuple ptr len
+                B.packCStringLen (ptr, fromIntegral len)
