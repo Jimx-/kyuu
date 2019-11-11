@@ -1,14 +1,14 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, TypeFamilies #-}
-module Kyuu.SuziQ.Backend
+{-# LANGUAGE FlexibleInstances, TypeFamilies #-}
+module Kyuu.Storage.SuziQ.Backend
         ( runSuziQ
         )
 where
 
 import           Kyuu.Prelude
 import           Kyuu.Storage.Backend
-import           Kyuu.SuziQ.FFI
-import           Kyuu.SuziQ.Core
-import           Kyuu.SuziQ.Error
+import           Kyuu.Storage.SuziQ.FFI
+import           Kyuu.Storage.SuziQ.Core
+import           Kyuu.Storage.SuziQ.Error
 
 import           Control.Monad.Trans.State.Lazy
 import           Control.Monad.Trans.Except
@@ -56,8 +56,7 @@ runSuziQ rootPath prog = do
         case db of
                 (Just db) -> do
                         let initState = initSqState db
-                        res <- runExceptT
-                                $ runStateT (runIdentityT prog) initState
+                        res <- runExceptT $ runStateT (unSuziQ prog) initState
                         case res of
                                 Left err ->
                                         putStrLn

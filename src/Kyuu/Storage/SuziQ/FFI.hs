@@ -1,5 +1,5 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
-module Kyuu.SuziQ.FFI
+module Kyuu.Storage.SuziQ.FFI
         ( SqDB
         , SqTable
         , SqTableScanIterator

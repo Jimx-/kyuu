@@ -1,6 +1,6 @@
 module Main where
 
-import           Kyuu.SuziQ.Backend
+import           Kyuu.Storage.SuziQ.Backend
 import           Kyuu.Storage.Backend
 
 import           Kyuu.Prelude
