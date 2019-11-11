@@ -20,6 +20,7 @@ class MonadIO m => StorageBackend m where
     type TableScanIteratorType m :: *
     type TupleType m:: *
     createTable :: OID -> OID -> m (TableType m)
+    openTable :: OID -> m (Maybe (TableType m))
     insertTuple :: TableType m -> B.ByteString -> m ()
     beginTableScan :: TableType m -> m (TableScanIteratorType m)
     tableScanNext :: TableScanIteratorType m -> ScanDirection -> m (Maybe (TupleType m))
@@ -30,6 +31,7 @@ instance (StorageBackend m) => StorageBackend (StateT s m) where
         type TableScanIteratorType (StateT s m) = TableScanIteratorType m
         type TupleType (StateT s m) = TupleType m
         createTable dbId tableId = lift $ createTable dbId tableId
+        openTable = lift . openTable
         insertTuple table tuple = lift $ insertTuple table tuple
         beginTableScan = lift . beginTableScan
         tableScanNext iterator dir = lift $ tableScanNext iterator dir
@@ -40,6 +42,7 @@ instance (StorageBackend m) => StorageBackend (ExceptT e m) where
         type TableScanIteratorType (ExceptT e m) = TableScanIteratorType m
         type TupleType (ExceptT e m) = TupleType m
         createTable dbId tableId = lift $ createTable dbId tableId
+        openTable = lift . openTable
         insertTuple table tuple = lift $ insertTuple table tuple
         beginTableScan = lift . beginTableScan
         tableScanNext iterator dir = lift $ tableScanNext iterator dir

@@ -36,6 +36,10 @@ instance StorageBackend SuziQ where
                 db <- getDB
                 sqCreateTable db dbId tableId
 
+        openTable tableId = do
+                db <- getDB
+                sqOpenTable db tableId
+
         insertTuple table tuple = do
                 db <- getDB
                 sqInsertTuple table db tuple
@@ -60,7 +64,7 @@ runSuziQ rootPath prog = do
                         case res of
                                 Left err ->
                                         putStrLn
-                                                $  "Uncaught error: "
+                                                $  "Uncaught storage error: "
                                                 ++ show err
                                 Right _ -> return ()
                 _ -> putStrLn "cannot create database instance"
@@ -71,7 +75,7 @@ lastErrorMessage = do
         len <- liftIO sq_last_error_length
         msg <- liftIO $ allocaBytes (fromIntegral len) $ \ptr -> do
                 len <- sq_last_error_message ptr (fromIntegral len)
-                C.packCString ptr
+                C.packCStringLen (ptr, fromIntegral len)
         return $ C.unpack msg
 
 lastError :: (MonadIO m) => m SqErr
@@ -111,6 +115,15 @@ sqCreateTable db dbId tableId = do
                 _            -> do
                         err <- lastError
                         lerror err
+
+sqOpenTable :: SqDB -> OID -> SuziQ (Maybe SqTable)
+sqOpenTable db tableId = liftIO $ withForeignPtr db $ \database -> do
+        ptr <- sq_open_table database (fromIntegral tableId)
+        if ptr /= nullPtr
+                then do
+                        foreignPtr <- newForeignPtr sq_free_table ptr
+                        return $ Just foreignPtr
+                else return Nothing
 
 sqInsertTuple :: SqTable -> SqDB -> B.ByteString -> SuziQ ()
 sqInsertTuple table db tuple = do

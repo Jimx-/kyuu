@@ -39,7 +39,8 @@ packages:
 # - git: https://github.com/commercialhaskell/stack.git
 #   commit: e7b331f14bcffb8367cd58fbfc8b40ec7642100a
 #
-#extra-deps:
+extra-deps:
+- simple-sql-parser-0.6.0@sha256:ce8f602fa81001287deb25af7b711fc45e1cdf36ff7702edde5dee2358f19a37,5580
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

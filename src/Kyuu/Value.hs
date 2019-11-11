@@ -4,13 +4,18 @@ module Kyuu.Value
         , TupleDesc
         , Tuple(..)
         , sortTuple
+        , decodeTuple
         )
 where
 
-import           Data.List                      ( elemIndex )
-import           Data.Monoid
-
 import           Kyuu.Prelude
+import           Kyuu.Catalog.Schema
+
+import qualified Data.ByteString               as B
+import           Data.Char                      ( chr )
+import           Data.List                      ( elemIndex )
+import           Data.List.Split
+import           Data.Monoid
 
 data Value = VNull
            | VBool Bool
@@ -48,3 +53,18 @@ sortTuple (d : ds) tuple@(Tuple descs values) =
                         Nothing    -> mempty
                 )
                 <> sortTuple ds tuple
+
+decodeTuple :: B.ByteString -> TableSchema -> Tuple
+decodeTuple buf TableSchema { tableCols = tableCols } = readValues
+        (splitOn "," $ map (chr . fromIntegral) (B.unpack buf))
+        tableCols
+    where
+        readValues [] _ = mempty
+        readValues (x : xs) (ColumnSchema tableId colId _ sType : cols) =
+                let val     = readValue sType x
+                    colDesc = ColumnDesc tableId colId
+                in  Tuple [colDesc] [val] <> readValues xs cols
+
+        readValue SInt    x = VInt (read x)
+        readValue SDouble x = VDouble (read x)
+        readValue SString x = VString x

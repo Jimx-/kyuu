@@ -9,6 +9,7 @@ module Kyuu.Storage.SuziQ.FFI
         , sq_create_db
         , sq_free_db
         , sq_create_table
+        , sq_open_table
         , sq_free_table
         , sq_table_insert_tuple
         , sq_table_begin_scan
@@ -58,6 +59,9 @@ foreign import ccall unsafe "&sq_free_db"
 
 foreign import ccall unsafe "sq_create_table"
   sq_create_table :: Ptr DBPtr -> Int64 -> Int64 -> IO (Ptr TablePtr)
+
+foreign import ccall unsafe "sq_open_table"
+  sq_open_table :: Ptr DBPtr -> Int64 -> IO (Ptr TablePtr)
 
 foreign import ccall unsafe "&sq_free_table"
   sq_free_table :: FunPtr (Ptr TablePtr -> IO ())

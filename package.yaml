@@ -27,6 +27,9 @@ dependencies:
 - transformers
 - bytestring
 - containers
+- simple-sql-parser == 0.6.0
+- pretty-simple
+- split
 
 library:
   source-dirs: src

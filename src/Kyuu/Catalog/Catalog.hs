@@ -2,6 +2,7 @@
 module Kyuu.Catalog.Catalog
         ( CatalogState(..)
         , initCatalogState
+        , lookupTableById
         , lookupTableIdByName
         , getTableColumns
         , lookupTableColumnById
