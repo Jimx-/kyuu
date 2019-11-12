@@ -27,20 +27,44 @@ import           Text.Pretty.Simple             ( pPrint )
 
 import           System.IO
 
-packStr = B.pack . map (fromIntegral . ord)
+execSimpleStmt :: (StorageBackend m) => String -> Kyuu m ()
+execSimpleStmt stmt = case parseSQLStatement stmt of
+        (Right tree) -> do
+                liftIO $ putStrLn "=============================="
+                liftIO $ pPrint tree
+                liftIO $ putStrLn "=============================="
+                qry <- analyzeParseTree tree
+                liftIO $ pPrint qry
+                liftIO $ putStrLn "=============================="
 
-insertTuples :: (StorageBackend m) => Int -> TableType m -> B.ByteString -> m ()
-insertTuples i table tuple = if i == 0
-        then return ()
-        else do
-                insertTuple table tuple
-                insertTuples (i - 1) table tuple
+                physicalPlan <- if L.isOptimizableQuery qry
+                        then do
+                                (logicalPlan, pbState) <- L.buildLogicalPlan qry
+                                liftIO $ pPrint pbState
+                                liftIO $ pPrint logicalPlan
+                                liftIO $ putStrLn
+                                        "=============================="
+                                logicalPlan <- optimizeLogicalPlan
+                                        pbState
+                                        logicalPlan
+                                liftIO $ pPrint logicalPlan
+                                liftIO $ putStrLn
+                                        "=============================="
+                                P.getPhysicalPlan logicalPlan
+                        else P.buildPhysicalPlanForQuery qry
+
+                liftIO $ pPrint physicalPlan
+                liftIO $ putStrLn "=============================="
+                execPlan <- buildExecPlan physicalPlan
+                liftIO $ pPrint execPlan
+                liftIO $ putStrLn "=============================="
+                executePlan execPlan
+
+        _ -> return ()
 
 prog :: (StorageBackend m) => Kyuu m ()
 prog = do
         table <- createTable 0 1
-        let tuple = packStr "0,hello,100,0"
-        insertTuples 100 table tuple
 
         createTableWithCatalog
                 (TableSchema
@@ -53,30 +77,8 @@ prog = do
                         ]
                 )
 
-        let sqlStmt = "select ename from emp"
-        case parseSQLStatement sqlStmt of
-                (Right tree) -> do
-                        liftIO $ putStrLn "=============================="
-                        liftIO $ pPrint tree
-                        liftIO $ putStrLn "=============================="
-                        qry <- analyzeParseTree tree
-                        liftIO $ pPrint qry
-                        liftIO $ putStrLn "=============================="
-                        (logicalPlan, pbState) <- L.buildLogicalPlan qry
-                        liftIO $ pPrint pbState
-                        liftIO $ pPrint logicalPlan
-                        liftIO $ putStrLn "=============================="
-                        logicalPlan <- optimizeLogicalPlan pbState logicalPlan
-                        liftIO $ pPrint logicalPlan
-                        liftIO $ putStrLn "=============================="
-                        physicalPlan <- P.getPhysicalPlan logicalPlan
-                        liftIO $ pPrint physicalPlan
-                        liftIO $ putStrLn "=============================="
-                        execPlan <- buildExecPlan physicalPlan
-                        liftIO $ pPrint execPlan
-                        liftIO $ putStrLn "=============================="
-                        executePlan execPlan
-                _ -> return ()
+        execSimpleStmt "insert into emp (empno, ename) values (0, 'hello')"
+        execSimpleStmt "select empno, ename from emp"
 
 main :: IO ()
 main = runSuziQ "testdb" $ runKyuu prog

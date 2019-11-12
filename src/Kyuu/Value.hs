@@ -1,9 +1,11 @@
+{-# LANGUAGE DeriveGeneric, NamedFieldPuns #-}
 module Kyuu.Value
         ( Value(..)
         , ColumnDesc(..)
         , TupleDesc
         , Tuple(..)
         , sortTuple
+        , encodeTuple
         , decodeTuple
         )
 where
@@ -16,13 +18,17 @@ import           Data.Char                      ( chr )
 import           Data.List                      ( elemIndex )
 import           Data.List.Split
 import           Data.Monoid
+import           Data.Store
+import           Data.Typeable
+import           GHC.Generics
 
 data Value = VNull
            | VBool Bool
            | VInt Int
            | VDouble Double
            | VString String
-           deriving (Eq)
+           deriving (Eq, Generic, Typeable)
+instance Store Value
 
 instance Show Value where
         show VNull       = "(null)"
@@ -32,12 +38,12 @@ instance Show Value where
         show (VString s) = "\"" ++ s ++ "\""
 
 data ColumnDesc = ColumnDesc OID OID
-                deriving (Eq, Show)
+                deriving (Eq, Show, Generic, Typeable)
 
 type TupleDesc = [ColumnDesc]
 
-data Tuple = Tuple TupleDesc [Value]
-           deriving (Eq, Show)
+data Tuple = Tuple [ColumnDesc] [Value]
+           deriving (Eq, Show, Generic, Typeable)
 
 instance Semigroup Tuple where
         (Tuple ld lv) <> (Tuple rd rv) = Tuple (ld <> rd) (lv <> rv)
@@ -54,17 +60,14 @@ sortTuple (d : ds) tuple@(Tuple descs values) =
                 )
                 <> sortTuple ds tuple
 
-decodeTuple :: B.ByteString -> TableSchema -> Tuple
-decodeTuple buf TableSchema { tableCols = tableCols } = readValues
-        (splitOn "," $ map (chr . fromIntegral) (B.unpack buf))
-        tableCols
-    where
-        readValues [] _ = mempty
-        readValues (x : xs) (ColumnSchema tableId colId _ sType : cols) =
-                let val     = readValue sType x
-                    colDesc = ColumnDesc tableId colId
-                in  Tuple [colDesc] [val] <> readValues xs cols
+encodeTuple :: Tuple -> B.ByteString
+encodeTuple (Tuple _ vals) = encode vals
 
-        readValue SInt    x = VInt (read x)
-        readValue SDouble x = VDouble (read x)
-        readValue SString x = VString x
+decodeTuple :: B.ByteString -> TableSchema -> Maybe Tuple
+decodeTuple buf TableSchema { tableCols } = case decode buf of
+        (Right vals) -> Just $ Tuple tupleDesc vals
+        _            -> Nothing
+    where
+        tupleDesc = map
+                (\ColumnSchema { colTable, colId } -> ColumnDesc colTable colId)
+                tableCols

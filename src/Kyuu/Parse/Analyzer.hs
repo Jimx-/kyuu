@@ -52,6 +52,10 @@ data ParserNode = SelectStmt { isDistinct :: Bool
                 | CreateTableStmt { tableName :: String
                                   , columns :: [ColumnSchema]
                                   , constraints :: [ColumnConstraint] }
+                | InsertStmt { targetTable :: RangeTableRef
+                             , targets:: [SqlExpr Value]
+                             , exprList :: [[SqlExpr Value]]
+                             }
                 deriving (Show)
 
 data AnalyzerState = AnalyzerState { _namePool :: [String]
@@ -169,6 +173,7 @@ transformTopLevelStmt = transformStmt
 transformStmt :: (StorageBackend m) => S.Statement -> Analyzer m ParserNode
 transformStmt stmt@S.SelectStatement{} = transformSelectStmt stmt
 transformStmt stmt@S.CreateTable{}     = transformDDL stmt
+transformStmt stmt@S.Insert{}          = transformInsert stmt
 
 transformScalarExpr
         :: (StorageBackend m) => S.ScalarExpr -> Analyzer m (SqlExpr Value)
@@ -201,6 +206,8 @@ transformScalarExpr (S.NumLit lit) = return $ ValueExpr (readNumLit lit)
         readNumLit :: String -> Value
         readNumLit lit =
                 if '.' `elem` lit then VDouble (read lit) else VInt (read lit)
+
+transformScalarExpr (S.StringLit _ _ lit) = return $ ValueExpr (VString lit)
 
 transformSelectStmt
         :: (StorageBackend m) => S.Statement -> Analyzer m ParserNode
@@ -313,3 +320,67 @@ transformColumnType (S.TypeName [S.Name _ "varchar"]) = return SString
 transformColumnType (S.TypeName [S.Name _ "double" ]) = return SDouble
 transformColumnType (S.TypeName [S.Name _ typeName]) =
         lift $ lerror (UnknownDataType typeName)
+
+transformInsert :: (StorageBackend m) => S.Statement -> Analyzer m ParserNode
+transformInsert (S.Insert [S.Name _ tableName] cols source) = do
+        tableId <- lift $ lookupTableIdByName tableName
+        targetTable@(RangeTableRef tableRef) <- case tableId of
+                (Just id) -> appendRangeTable (RteTable id tableName)
+                Nothing   -> lift $ lerror $ TableWithNameNotFound tableName
+
+        rangeTable <- getRangeTable
+        targets    <- transformInsertTargets (rangeTable !! tableRef) cols
+
+        exprs      <- transformInsertSource source
+
+        let     exprLen   = length exprs
+                targetLen = length targets
+
+        if exprLen > targetLen
+                then
+                        lift
+                                $ lerror
+                                          (SyntaxError
+                                                  "INSERT has more expressions than target columns"
+                                          )
+                else do
+                        return $ InsertStmt targetTable targets exprs
+
+transformInsertSource
+        :: (StorageBackend m) => S.InsertSource -> Analyzer m [[SqlExpr Value]]
+transformInsertSource (S.InsertQuery (S.Values exprList)) =
+        forM exprList $ \exprs -> mapM transformScalarExpr exprs
+
+transformInsertTargets
+        :: (StorageBackend m)
+        => RangeTableEntry
+        -> Maybe [S.Name]
+        -> Analyzer m [SqlExpr Value]
+transformInsertTargets entry Nothing = transformTableColumns entry True
+transformInsertTargets (RteTable tableId _) (Just columns) =
+        forM columns $ \(S.Name _ colName) -> do
+                colEntry <- lookupColumnByName colName
+
+                case colEntry of
+                        Just _  -> lift $ lerror (DuplicateColumn colName)
+                        Nothing -> do
+                                colSchema <- lift $ lookupTableColumnByName
+                                        tableId
+                                        colName
+
+                                case colSchema of
+                                        (Just (ColumnSchema _ colId _ _)) -> do
+                                                appendColumnTable
+                                                        tableId
+                                                        colId
+                                                        colName
+                                                let expr = ColumnRefExpr
+                                                            tableId
+                                                            colId
+                                                return expr
+                                        _ ->
+                                                lift
+                                                        $ lerror
+                                                                  (ColumnNotFound
+                                                                          colName
+                                                                  )

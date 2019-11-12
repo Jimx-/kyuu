@@ -37,4 +37,7 @@ buildOperator (NestedLoopJoin _ joinQuals _ schema left right) = do
         rightOp <- buildOperator right
         return $ NestLoopOp joinQuals schema leftOp rightOp
 
-buildOperator (CreateTable schema) = return $ CreateTableOp schema False mempty
+buildOperator (CreateTable schema) = return $ CreateTableOp schema False
+
+buildOperator (Insert tableId targetExprs) =
+        return $ InsertOp tableId targetExprs

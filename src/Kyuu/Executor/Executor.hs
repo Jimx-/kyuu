@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell, NamedFieldPuns #-}
 module Kyuu.Executor.Executor
         ( executePlan
         , nextTuple
@@ -8,8 +8,10 @@ where
 import           Control.Monad.State.Lazy
 import           Control.Lens
 
+import           Data.List                      ( find )
 import           Data.Map                       ( Map )
 import qualified Data.Map                      as Map
+import           Data.Maybe
 
 import           Kyuu.Core
 import           Kyuu.Catalog.Catalog
@@ -77,7 +79,7 @@ nextTuple op@(TableScanOp tableId schema filters tupleDesc scanIterator) = do
                                 Nothing         -> return (Nothing, op)
                                 Just tableTuple -> do
                                         tupleBuf <- getTupleData tableTuple
-                                        let     tuple = decodeTuple
+                                        let     tuple = fromJust $ decodeTuple
                                                         tupleBuf
                                                         schema
                                                 newOp = TableScanOp
@@ -197,12 +199,54 @@ nextTuple op@(NestLoopOp joinQuals tupleDesc outerInput innerInput) = do
                                                    joinQuals
                                                    newInner
 
-nextTuple op@(CreateTableOp schema done tupleDesc) = do
-        if done
-                then return (Nothing, op)
-                else do
-                        createTableWithCatalog schema
-                        return (Nothing, op { done = True })
+nextTuple op@(CreateTableOp schema done) = if done
+        then return (Nothing, op)
+        else do
+                createTableWithCatalog schema
+                return (Nothing, op { done = True })
+
+nextTuple op@(InsertOp tableId targetExprs) = do
+        schema <- lookupTableById tableId
+        table  <- openTable tableId
+
+        case (schema, table) of
+                (Just schema, Just table) -> do
+                        insertRows tableId schema table targetExprs
+                        return (Nothing, op)
+                _ -> lerror (TableNotFound tableId)
+    where
+        insertRows tableId TableSchema { tableCols } table targetExprs =
+                forM_ targetExprs $ \exprs -> do
+                        tuple <- mconcat <$> mapM (`evalExpr` mempty) exprs
+                        let     filledTuple = sortTuple
+                                        (map
+                                                (\ColumnSchema { colTable, colId } ->
+                                                        ColumnDesc
+                                                                colTable
+                                                                colId
+                                                )
+                                                tableCols
+                                        )
+                                        (fillTuple tableCols tuple)
+                                tupleBuf = encodeTuple filledTuple
+                        insertTuple table tupleBuf
+
+        fillTuple [] tuple = tuple
+        fillTuple (ColumnSchema { colTable, colId, colType } : cols) tuple@(Tuple tupleDesc _)
+                = case
+                                find
+                                        (\(ColumnDesc tableId' colId') ->
+                                                tableId
+                                                        == tableId'
+                                                        && colId
+                                                        == colId'
+                                        )
+                                        tupleDesc
+                        of
+                                (Just _) -> fillTuple cols tuple
+                                _ ->
+                                        Tuple [ColumnDesc tableId colId] [VNull]
+                                                <> fillTuple cols tuple
 
 nextTuple (PrintOp printHeader tupleDesc input) = do
         (inputTuple, newInput) <- nextTuple input

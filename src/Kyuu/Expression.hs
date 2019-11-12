@@ -24,6 +24,7 @@ data BinOp = BAdd
 
 data SqlExpr t where
   ColumnRefExpr ::OID -> OID -> SqlExpr Value
+  ColumnAssignExpr ::OID -> OID -> SqlExpr Value -> SqlExpr Tuple
   BinOpExpr ::BinOp -> SqlExpr Value -> SqlExpr Value -> SqlExpr Value
   ValueExpr ::Value -> SqlExpr Value
 
@@ -68,6 +69,10 @@ evalExpr expr@(ColumnRefExpr tableId colId) (Tuple ((ColumnDesc tableId' colId')
         = if tableId == tableId' && colId == colId'
                 then return v
                 else evalExpr expr (Tuple tds vds)
+
+evalExpr (ColumnAssignExpr tableId colId expr) tuple = do
+        val <- evalExpr expr tuple
+        return $ Tuple [ColumnDesc tableId colId] [val]
 
 evalExpr (BinOpExpr op left right) tuple = do
         lval <- evalExpr left tuple

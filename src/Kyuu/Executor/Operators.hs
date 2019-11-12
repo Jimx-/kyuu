@@ -33,8 +33,9 @@ data Operator m = TableScanOp { tableId :: OID
                         , tupleDesc :: TupleDesc
                         , input :: Operator m }
               | CreateTableOp { tableSchema :: TableSchema
-                              , done :: Bool
-                              , tupleDesc :: TupleDesc }
+                              , done :: Bool }
+              | InsertOp { tableId :: OID
+                         , targetExprs :: [[SqlExpr Tuple]] }
 
 instance Show (Operator m) where
         show (TableScanOp tId schema filters tupleDesc _) =
@@ -81,14 +82,20 @@ instance Show (Operator m) where
                         ++ ", input = "
                         ++ show input
                         ++ "}"
-        show (CreateTableOp tableSchema done tupleDesc) =
+        show (CreateTableOp tableSchema done) =
                 "CreateTableOp {schema = "
                         ++ show tableSchema
                         ++ ", done = "
                         ++ show done
-                        ++ ", tupleDesc = "
-                        ++ show tupleDesc
+                        ++ "}"
+        show (InsertOp tableId targetExprs) =
+                "InsertOp {tableId = "
+                        ++ show tableId
+                        ++ ", targetExprs = "
+                        ++ show targetExprs
                         ++ "}"
 
 getOpTupleDesc :: Operator m -> TupleDesc
-getOpTupleDesc = tupleDesc
+getOpTupleDesc CreateTableOp{} = []
+getOpTupleDesc InsertOp{}      = []
+getOpTupleDesc op              = tupleDesc op

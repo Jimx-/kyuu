@@ -24,9 +24,7 @@ optimizeLogicalPlan
         => L.PlanBuilderState
         -> L.LogicalPlan
         -> Kyuu m L.LogicalPlan
-optimizeLogicalPlan _                       lp@L.CreateTable{} = return lp
-
-optimizeLogicalPlan L.PlanBuilderState {..} lp                 = do
+optimizeLogicalPlan L.PlanBuilderState {..} lp = do
         let
                 rules =
                         sequence

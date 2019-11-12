@@ -2,9 +2,11 @@
 module Kyuu.Planner.LogicalPlan
         ( JoinType(..)
         , LogicalPlan(..)
+        , PlanBuilderState(..)
+        , isOptimizableQuery
         , getLogicalTupleDesc
         , buildLogicalPlan
-        , PlanBuilderState(..)
+        , resolveRangeTableRef
         )
 where
 
@@ -37,8 +39,6 @@ data LogicalPlan = DataSource { tableId :: OID
                         , tupleDesc :: TupleDesc
                         , leftChild :: LogicalPlan
                         , rightChild :: LogicalPlan }
-                 | CreateTable { tableSchema :: TableSchema
-                               }
                  deriving (Eq, Show)
 
 newtype PlanBuilderState = PlanBuilderState { _needPredicatePushDown :: Bool
@@ -59,6 +59,10 @@ setNeedPredicatePushDown = modify $ set needPredicatePushDown_ True
 getLogicalTupleDesc :: LogicalPlan -> TupleDesc
 getLogicalTupleDesc = tupleDesc
 
+isOptimizableQuery :: Query -> Bool
+isOptimizableQuery Query { _parseTree = SelectStmt{} } = True
+isOptimizableQuery _ = False
+
 buildLogicalPlan
         :: (StorageBackend m) => Query -> Kyuu m (LogicalPlan, PlanBuilderState)
 buildLogicalPlan Query { _parseTree, _rangeTable } =
@@ -74,10 +78,6 @@ buildStmt SelectStmt { selectItems, fromItem, whereExpr } rangeTable = do
         sigma <- maybeM (return ds) (buildSelectFilter ds) $ return whereExpr
         let pi = buildProjection sigma selectItems
         return pi
-
-buildStmt (CreateTableStmt tableName columns constraints) _ = do
-        let schema = TableSchema 0 tableName columns
-        return $ CreateTable schema
 
 resolveRangeTableRef :: RangeTableRef -> RangeTable -> RangeTableEntry
 resolveRangeTableRef (RangeTableRef r) table = table !! r
