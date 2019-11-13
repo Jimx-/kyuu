@@ -16,7 +16,6 @@ import           Kyuu.Catalog.Schema
 import qualified Data.ByteString               as B
 import           Data.Char                      ( chr )
 import           Data.List                      ( elemIndex )
-import           Data.List.Split
 import           Data.Monoid
 import           Data.Store
 import           Data.Typeable
@@ -38,12 +37,12 @@ instance Show Value where
         show (VString s) = "\"" ++ s ++ "\""
 
 data ColumnDesc = ColumnDesc OID OID
-                deriving (Eq, Show, Generic, Typeable)
+                deriving (Eq, Show)
 
 type TupleDesc = [ColumnDesc]
 
-data Tuple = Tuple [ColumnDesc] [Value]
-           deriving (Eq, Show, Generic, Typeable)
+data Tuple = Tuple TupleDesc [Value]
+           deriving (Eq, Show)
 
 instance Semigroup Tuple where
         (Tuple ld lv) <> (Tuple rd rv) = Tuple (ld <> rd) (lv <> rv)

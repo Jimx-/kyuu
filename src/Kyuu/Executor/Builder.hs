@@ -22,7 +22,7 @@ buildExecPlan pp = do
 buildOperator :: (StorageBackend m) => PhysicalPlan -> Kyuu m (Operator m)
 
 buildOperator (TableScan tableId tableName filters tupleDesc) =
-        return $ TableScanOp tableId Nothing filters tupleDesc Nothing
+        return $ TableScanOp tableId filters tupleDesc Nothing
 
 buildOperator (Selection conds schema child) = do
         childOp <- buildOperator child

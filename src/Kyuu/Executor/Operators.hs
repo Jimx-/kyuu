@@ -11,14 +11,12 @@ import           Kyuu.Expression
 import           Kyuu.Prelude
 import           Kyuu.Catalog.Schema
 import           Kyuu.Value
-
-import           Kyuu.Storage.Backend
+import           Kyuu.Table
 
 data Operator m = TableScanOp { tableId :: OID
-                              , schema :: Maybe TableSchema
                               , filters :: [SqlExpr Value]
                               , tupleDesc :: TupleDesc
-                              , scanIterator:: Maybe (TableScanIteratorType m) }
+                              , scanIterator:: Maybe (TableScanIterator m) }
               | SelectionOp { filter :: [SqlExpr Value]
                             , tupleDesc :: TupleDesc
                             , input :: Operator m }
@@ -38,11 +36,9 @@ data Operator m = TableScanOp { tableId :: OID
                          , targetExprs :: [[SqlExpr Tuple]] }
 
 instance Show (Operator m) where
-        show (TableScanOp tId schema filters tupleDesc _) =
+        show (TableScanOp tId filters tupleDesc _) =
                 "TableScanOp {tableId = "
                         ++ show tId
-                        ++ ", schema = "
-                        ++ show schema
                         ++ ", filters = "
                         ++ show filters
                         ++ ", tupleDesc = "

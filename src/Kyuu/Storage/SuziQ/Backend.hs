@@ -49,8 +49,9 @@ instance StorageBackend SuziQ where
                 sqBeginTableScan table db
 
         tableScanNext iterator dir = do
-                db <- getDB
-                sqTableScanNext iterator db dir
+                db    <- getDB
+                tuple <- sqTableScanNext iterator db dir
+                return (iterator, tuple)
 
         getTupleData = sqTupleGetData
 

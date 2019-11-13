@@ -25,8 +25,6 @@ import           Data.Char                      ( ord )
 
 import           Text.Pretty.Simple             ( pPrint )
 
-import           System.IO
-
 execSimpleStmt :: (StorageBackend m) => String -> Kyuu m ()
 execSimpleStmt stmt = case parseSQLStatement stmt of
         (Right tree) -> do
@@ -64,19 +62,8 @@ execSimpleStmt stmt = case parseSQLStatement stmt of
 
 prog :: (StorageBackend m) => Kyuu m ()
 prog = do
-        table <- createTable 0 1
-
-        createTableWithCatalog
-                (TableSchema
-                        1
-                        "emp"
-                        [ ColumnSchema 1 1 "empno"  SInt
-                        , ColumnSchema 1 2 "ename"  SString
-                        , ColumnSchema 1 3 "sal"    SDouble
-                        , ColumnSchema 1 4 "deptno" SInt
-                        ]
-                )
-
+        execSimpleStmt
+                "create table emp (empno int, ename varchar, sal double, deptno int)"
         execSimpleStmt "insert into emp (empno, ename) values (0, 'hello')"
         execSimpleStmt "select empno, ename from emp"
 

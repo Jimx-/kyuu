@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, NamedFieldPuns, DuplicateRecordFields #-}
 module Kyuu.Catalog.Catalog
         ( CatalogState(..)
         , initCatalogState
@@ -8,6 +8,7 @@ module Kyuu.Catalog.Catalog
         , lookupTableColumnById
         , lookupTableColumnByName
         , createTableWithCatalog
+        , openTable
         )
 where
 
@@ -16,6 +17,8 @@ import           Kyuu.Core
 import           Kyuu.Catalog.Schema
 import           Kyuu.Catalog.State
 import           Kyuu.Error
+import           Kyuu.Table
+import qualified Kyuu.Storage.Backend          as S
 
 import           Control.Lens
 
@@ -27,9 +30,8 @@ import qualified Data.Map                      as Map
 lookupTableById :: (HasKState m) => OID -> m (Maybe TableSchema)
 lookupTableById tId = do
         state <- getCatalogState
-        return $ find
-                (\TableSchema { tableId = tableId } -> tableId == tId)
-                (state ^. tableSchemas_)
+        return $ find (\TableSchema { tableId } -> tableId == tId)
+                      (state ^. tableSchemas_)
 
 lookupTableIdByName :: (HasKState m) => String -> m (Maybe OID)
 lookupTableIdByName name = do
@@ -38,7 +40,7 @@ lookupTableIdByName name = do
                     (\TableSchema { tableName = tableName } -> tableName == name
                     )
                     (state ^. tableSchemas_)
-        return $ fmap tableId schema
+        return $ fmap (\TableSchema { tableId } -> tableId) schema
 
 getTableColumns :: (HasKState m) => OID -> m [ColumnSchema]
 getTableColumns tId = do
@@ -69,7 +71,7 @@ lookupTableColumnByName tId name = do
 
                 _ -> return Nothing
 
-createTableWithCatalog :: (StorageBackend m) => TableSchema -> Kyuu m ()
+createTableWithCatalog :: (StorageBackend m) => TableSchema -> Kyuu m (Table m)
 createTableWithCatalog (TableSchema _ tableName tableCols) = do
         exists <- lookupTableIdByName tableName
         case exists of
@@ -77,6 +79,38 @@ createTableWithCatalog (TableSchema _ tableName tableCols) = do
                 Nothing -> do
                         state <- getCatalogState
                         let     tableId = 1 + length (state ^. tableSchemas_)
-                                schema =
-                                        TableSchema tableId tableName tableCols
+                                schema  = TableSchema
+                                        tableId
+                                        tableName
+                                        (map
+                                                (\x -> x { colTable = tableId })
+                                                tableCols
+                                        )
                         modifyCatalogState $ over tableSchemas_ (schema :)
+                        storage <- S.createTable 0 tableId
+                        return $ Table tableId schema storage
+
+
+openTable :: (StorageBackend m) => OID -> Kyuu m (Maybe (Table m))
+openTable tableId = do
+        schema <- lookupTableById tableId
+
+        case schema of
+                Nothing       -> return Nothing
+                (Just schema) -> do
+                        storage <- S.openTable tableId
+                        case storage of
+                                (Just storage) ->
+                                        return
+                                                $ Just
+                                                          (Table tableId
+                                                                 schema
+                                                                 storage
+                                                          )
+                                _ ->
+                                        lerror
+                                                $ InvalidState
+                                                          ("storage not created for table "
+                                                          ++ show
+                                                                     tableId
+                                                          )

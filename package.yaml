@@ -29,7 +29,6 @@ dependencies:
 - containers
 - simple-sql-parser == 0.6.0
 - pretty-simple
-- split
 - store
 
 library:

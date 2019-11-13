@@ -19,10 +19,10 @@ import           Kyuu.Catalog.Schema
 import           Kyuu.Error
 import           Kyuu.Expression
 import           Kyuu.Prelude
+import           Kyuu.Table
 import           Kyuu.Value
 import           Kyuu.Executor.Operators
 import           Kyuu.Executor.Builder
-import           Kyuu.Storage.Backend
 
 executePlan :: (StorageBackend m) => ExecutionPlan m -> Kyuu m ()
 executePlan (ExecutionPlan plan) = do
@@ -38,18 +38,17 @@ drain op = do
                 _          -> return ()
 
 rescan :: (StorageBackend m) => Operator m -> Kyuu m (Operator m)
-rescan op@(TableScanOp tableId _ _ _ _) = return op
-rescan op                               = return op
+rescan op@(TableScanOp tableId _ _ _) = return op
+rescan op                             = return op
 
 open :: (StorageBackend m) => Operator m -> Kyuu m (Operator m)
-open op@(TableScanOp tableId _ filters tupleDesc _) = do
+open op@(TableScanOp tableId filters tupleDesc _) = do
         schema <- lookupTableById tableId
         table  <- openTable tableId
         case (schema, table) of
                 (Just schema, Just table) -> do
                         iterator <- beginTableScan table
                         return $ TableScanOp tableId
-                                             (Just schema)
                                              filters
                                              tupleDesc
                                              (Just iterator)
@@ -71,23 +70,21 @@ open op = return op
 
 nextTuple
         :: (StorageBackend m) => Operator m -> Kyuu m (Maybe Tuple, Operator m)
-nextTuple op@(TableScanOp tableId schema filters tupleDesc scanIterator) = do
-        case (schema, scanIterator) of
-                (Just schema, Just scanIterator) -> do
-                        tableTuple <- tableScanNext scanIterator Forward
-                        case tableTuple of
-                                Nothing         -> return (Nothing, op)
-                                Just tableTuple -> do
-                                        tupleBuf <- getTupleData tableTuple
-                                        let     tuple = fromJust $ decodeTuple
-                                                        tupleBuf
-                                                        schema
-                                                newOp = TableScanOp
-                                                        tableId
-                                                        (Just schema)
-                                                        filters
-                                                        tupleDesc
-                                                        (Just scanIterator)
+nextTuple op@(TableScanOp tableId filters tupleDesc scanIterator) =
+        case scanIterator of
+                (Just scanIterator) -> do
+                        (newIterator, tuple) <- tableScanNext
+                                scanIterator
+                                Forward
+                        let
+                                newOp = TableScanOp tableId
+                                                    filters
+                                                    tupleDesc
+                                                    (Just newIterator)
+                        case tuple of
+                                Nothing    -> return (Nothing, newOp)
+                                Just tuple -> do
+
                                         res <- forM filters
                                                 $ \expr -> evalExpr expr tuple
                                         let
@@ -218,7 +215,8 @@ nextTuple op@(InsertOp tableId targetExprs) = do
         insertRows tableId TableSchema { tableCols } table targetExprs =
                 forM_ targetExprs $ \exprs -> do
                         tuple <- mconcat <$> mapM (`evalExpr` mempty) exprs
-                        let     filledTuple = sortTuple
+                        let
+                                filledTuple = sortTuple
                                         (map
                                                 (\ColumnSchema { colTable, colId } ->
                                                         ColumnDesc
@@ -228,8 +226,7 @@ nextTuple op@(InsertOp tableId targetExprs) = do
                                                 tableCols
                                         )
                                         (fillTuple tableCols tuple)
-                                tupleBuf = encodeTuple filledTuple
-                        insertTuple table tupleBuf
+                        insertTuple table filledTuple
 
         fillTuple [] tuple = tuple
         fillTuple (ColumnSchema { colTable, colId, colType } : cols) tuple@(Tuple tupleDesc _)

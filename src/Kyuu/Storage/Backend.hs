@@ -23,7 +23,7 @@ class MonadIO m => StorageBackend m where
     openTable :: OID -> m (Maybe (TableType m))
     insertTuple :: TableType m -> B.ByteString -> m ()
     beginTableScan :: TableType m -> m (TableScanIteratorType m)
-    tableScanNext :: TableScanIteratorType m -> ScanDirection -> m (Maybe (TupleType m))
+    tableScanNext :: TableScanIteratorType m -> ScanDirection -> m (TableScanIteratorType m, Maybe (TupleType m))
     getTupleData :: TupleType m -> m B.ByteString
 
 instance (StorageBackend m) => StorageBackend (StateT s m) where
