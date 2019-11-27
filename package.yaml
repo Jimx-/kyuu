@@ -30,6 +30,7 @@ dependencies:
 - simple-sql-parser == 0.6.0
 - pretty-simple
 - store
+- async
 
 library:
   source-dirs: src

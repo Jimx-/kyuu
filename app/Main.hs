@@ -19,6 +19,8 @@ import           Kyuu.Executor.Executor
 
 import           Kyuu.Storage.SuziQ.Backend
 
+import           Control.Concurrent.Async
+
 import qualified Data.ByteString               as B
 import           Data.Char                      ( ord )
 
@@ -61,12 +63,26 @@ execSimpleStmt stmt = case parseSQLStatement stmt of
 
         _ -> return ()
 
-prog :: (StorageBackend m) => Kyuu m ()
-prog = do
+prog1 :: (StorageBackend m) => Kyuu m ()
+prog1 = do
         execSimpleStmt
                 "create table emp (empno int, ename varchar, sal double, deptno int)"
         execSimpleStmt "insert into emp (empno, ename) values (0, 'hello')"
         execSimpleStmt "select empno, ename from emp"
 
+prog2 :: (StorageBackend m) => Kyuu m ()
+prog2 = do
+        execSimpleStmt
+                "create table emp1 (empno int, ename varchar, sal double, deptno int)"
+        execSimpleStmt "insert into emp1 (empno, ename) values (0, 'hello')"
+        execSimpleStmt "select empno, ename from emp1"
+
 main :: IO ()
-main = runSuziQ "testdb" $ runKyuu prog
+main = do
+        db <- sqCreateDB "testdb"
+        case db of
+                (Just db) -> do
+                        threads <- runKyuuMT [prog1, prog2]
+                        void $ forConcurrently threads $ \thread ->
+                                runSuziQWithDB db thread
+                _ -> putStrLn "cannot create database"

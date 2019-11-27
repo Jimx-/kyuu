@@ -1,6 +1,8 @@
 {-# LANGUAGE FlexibleInstances, TypeFamilies #-}
 module Kyuu.Storage.SuziQ.Backend
-        ( runSuziQ
+        ( sqCreateDB
+        , runSuziQ
+        , runSuziQWithDB
         )
 where
 
@@ -68,17 +70,16 @@ runSuziQ :: String -> SuziQ () -> IO ()
 runSuziQ rootPath prog = do
         db <- sqCreateDB rootPath
         case db of
-                (Just db) -> do
-                        let initState = initSqState db
-                        res <- runExceptT $ runStateT (unSuziQ prog) initState
-                        case res of
-                                Left err ->
-                                        putStrLn
-                                                $  "Uncaught storage error: "
-                                                ++ show err
-                                Right _ -> return ()
-                _ -> putStrLn "cannot create database instance"
+                (Just db) -> runSuziQWithDB db prog
+                _         -> putStrLn "cannot create database instance"
 
+runSuziQWithDB :: SqDB -> SuziQ () -> IO ()
+runSuziQWithDB db prog = do
+        let initState = initSqState db
+        res <- runExceptT $ runStateT (unSuziQ prog) initState
+        case res of
+                Left  err -> putStrLn $ "Uncaught storage error: " ++ show err
+                Right _   -> return ()
 
 lastErrorMessage :: (MonadIO m) => m String
 lastErrorMessage = do

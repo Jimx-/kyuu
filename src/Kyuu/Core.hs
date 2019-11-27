@@ -11,6 +11,7 @@ module Kyuu.Core
         , finishTransaction
         , getCurrentTransaction
         , runKyuu
+        , runKyuuMT
         , module X
         )
 where
@@ -21,6 +22,8 @@ import           Kyuu.Prelude
 import qualified Kyuu.Storage.Backend          as S
 import           Kyuu.Storage.Backend          as X
                                                 ( StorageBackend )
+
+import           Control.Concurrent.MVar
 
 import           Control.Lens
 import           Control.Monad.Trans.State.Lazy
@@ -36,25 +39,32 @@ import qualified Data.Map                      as Map
 
 type Transaction m = S.TransactionType m
 
-data KState m = KState { _catalogState :: CatalogState
+data KState m = KState { _catalogState :: MVar CatalogState
                        , _currentTxn :: Maybe (Transaction m) }
 
 makeLensesWith (lensRules & lensField .~ lensGen) ''KState
 
 type Kyuu m = StateT (KState m) (ExceptT Err m)
 
-initKyuuState :: KState m
-initKyuuState = KState initCatalogState Nothing
+initKyuuState :: MVar CatalogState -> KState m
+initKyuuState mcs = KState mcs Nothing
 
 getKState :: (StorageBackend m) => Kyuu m (KState m)
 getKState = get
 
 getCatalogState :: (StorageBackend m) => Kyuu m CatalogState
-getCatalogState = (^. catalogState_) <$> get
+getCatalogState = do
+        m  <- (^. catalogState_) <$> get
+        cs <- liftIO $ takeMVar m
+        liftIO $ putMVar m cs
+        return cs
 
 modifyCatalogState
         :: (StorageBackend m) => (CatalogState -> CatalogState) -> Kyuu m ()
-modifyCatalogState f = modify $ over catalogState_ f
+modifyCatalogState f = do
+        m  <- (^. catalogState_) <$> get
+        cs <- liftIO $ takeMVar m
+        liftIO $ putMVar m (f cs)
 
 lcatch :: (StorageBackend m) => Kyuu m a -> (Err -> Kyuu m a) -> Kyuu m a
 lcatch = liftCatch catchE
@@ -96,7 +106,19 @@ getCurrentTransaction = do
 -- |Perform all effects produced by the query processor
 runKyuu :: (StorageBackend m, MonadIO m) => Kyuu m () -> m ()
 runKyuu prog = do
-        res <- runExceptT $ runStateT prog initKyuuState
-        case res of
-                Left  err -> liftIO $ putStrLn $ "Uncaught error: " ++ show err
-                Right _   -> return ()
+        t <- runKyuuMT [prog]
+        head t
+
+runKyuuMT :: (StorageBackend m, MonadIO t) => [Kyuu m ()] -> t [m ()]
+runKyuuMT workers = do
+        let cs = initCatalogState
+        mcs <- liftIO $ newMVar cs
+        forM workers $ \worker -> return $ do
+                res <- runExceptT $ runStateT worker (initKyuuState mcs)
+                case res of
+                        Left err ->
+                                liftIO
+                                        $  putStrLn
+                                        $  "Uncaught error: "
+                                        ++ show err
+                        Right _ -> return ()
