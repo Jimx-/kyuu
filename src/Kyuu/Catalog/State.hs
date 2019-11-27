@@ -8,6 +8,7 @@ where
 
 import           Kyuu.Prelude
 import           Kyuu.Catalog.Schema
+import           Kyuu.Storage.Backend
 
 import           Control.Lens
 

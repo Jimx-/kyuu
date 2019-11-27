@@ -2,6 +2,7 @@
 module Kyuu.Catalog.Catalog
         ( CatalogState(..)
         , initCatalogState
+        , bootstrapCatalog
         , lookupTableById
         , lookupTableIdByName
         , getTableColumns
@@ -16,8 +17,10 @@ import           Kyuu.Prelude
 import           Kyuu.Core
 import           Kyuu.Catalog.Schema
 import           Kyuu.Catalog.State
+import           Kyuu.Catalog.Tables
 import           Kyuu.Error
 import           Kyuu.Table
+import           Kyuu.Value
 import qualified Kyuu.Storage.Backend          as S
 
 import           Control.Lens
@@ -26,6 +29,9 @@ import           Data.List                      ( find )
 import           Data.Maybe                     ( fromJust )
 import           Data.Map                       ( Map )
 import qualified Data.Map                      as Map
+
+catalogDatabaseId :: OID
+catalogDatabaseId = 1
 
 lookupTableById :: (StorageBackend m) => OID -> Kyuu m (Maybe TableSchema)
 lookupTableById tId = do
@@ -115,3 +121,40 @@ openTable tableId = do
                                                           ++ show
                                                                      tableId
                                                           )
+
+bootstrapCatalog :: (StorageBackend m) => Kyuu m ()
+bootstrapCatalog = do
+        let systemTables = [pgClassTableSchema, pgAttributeTableSchema]
+        forM_ systemTables $ \schema ->
+                modifyCatalogState $ over tableSchemas_ (schema :)
+
+        pgClassStorage <- S.openTable pgClassTableId
+        case pgClassStorage of
+                (Just _) -> return ()
+                _        -> createSystemTables systemTables
+
+createSystemTables :: (StorageBackend m) => [TableSchema] -> Kyuu m ()
+createSystemTables tables = do
+        startTransaction
+
+        forM_ tables $ \(TableSchema tableId _ _) ->
+                S.createTable catalogDatabaseId tableId
+
+        pgClassTable     <- fromJust <$> openTable pgClassTableId
+        pgAttributeTable <- fromJust <$> openTable pgAttributeTableId
+
+        forM_ tables $ \(TableSchema tableId tableName tableCols) -> do
+                let tuple = Tuple [] [VInt tableId, VString tableName]
+                insertTuple pgClassTable tuple
+
+                forM_ tableCols $ \(ColumnSchema _ colId colName colType) -> do
+                        let
+                                tuple = Tuple
+                                        []
+                                        [ VInt tableId
+                                        , VString colName
+                                        , VInt colId
+                                        ]
+                        insertTuple pgAttributeTable tuple
+
+        finishTransaction

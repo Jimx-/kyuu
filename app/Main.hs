@@ -1,5 +1,7 @@
 module Main where
 
+import           Kyuu
+
 import           Kyuu.Prelude
 import           Kyuu.Core
 import           Kyuu.Error
@@ -72,17 +74,14 @@ prog1 = do
 
 prog2 :: (StorageBackend m) => Kyuu m ()
 prog2 = do
-        execSimpleStmt
-                "create table emp1 (empno int, ename varchar, sal double, deptno int)"
-        execSimpleStmt "insert into emp1 (empno, ename) values (0, 'hello')"
-        execSimpleStmt "select empno, ename from emp1"
+        execSimpleStmt "select * from pg_attribute"
 
 main :: IO ()
 main = do
         db <- sqCreateDB "testdb"
         case db of
                 (Just db) -> do
-                        threads <- runKyuuMT [prog1, prog2]
+                        threads <- runKyuu [prog2]
                         void $ forConcurrently threads $ \thread ->
                                 runSuziQWithDB db thread
                 _ -> putStrLn "cannot create database"

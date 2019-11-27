@@ -2,6 +2,7 @@
 module Kyuu.Core
         ( Kyuu
         , Transaction
+        , initKyuuState
         , getKState
         , getCatalogState
         , modifyCatalogState
@@ -10,8 +11,6 @@ module Kyuu.Core
         , startTransaction
         , finishTransaction
         , getCurrentTransaction
-        , runKyuu
-        , runKyuuMT
         , module X
         )
 where
@@ -102,23 +101,3 @@ getCurrentTransaction = do
                                 (InvalidState
                                         "get current transaction in invalid context"
                                 )
-
--- |Perform all effects produced by the query processor
-runKyuu :: (StorageBackend m, MonadIO m) => Kyuu m () -> m ()
-runKyuu prog = do
-        t <- runKyuuMT [prog]
-        head t
-
-runKyuuMT :: (StorageBackend m, MonadIO t) => [Kyuu m ()] -> t [m ()]
-runKyuuMT workers = do
-        let cs = initCatalogState
-        mcs <- liftIO $ newMVar cs
-        forM workers $ \worker -> return $ do
-                res <- runExceptT $ runStateT worker (initKyuuState mcs)
-                case res of
-                        Left err ->
-                                liftIO
-                                        $  putStrLn
-                                        $  "Uncaught error: "
-                                        ++ show err
-                        Right _ -> return ()
