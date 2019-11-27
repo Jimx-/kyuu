@@ -18,7 +18,6 @@ import           Kyuu.Executor.Builder
 import           Kyuu.Executor.Executor
 
 import           Kyuu.Storage.SuziQ.Backend
-import           Kyuu.Storage.Backend
 
 import qualified Data.ByteString               as B
 import           Data.Char                      ( ord )
@@ -28,6 +27,7 @@ import           Text.Pretty.Simple             ( pPrint )
 execSimpleStmt :: (StorageBackend m) => String -> Kyuu m ()
 execSimpleStmt stmt = case parseSQLStatement stmt of
         (Right tree) -> do
+                startTransaction
                 liftIO $ putStrLn "=============================="
                 liftIO $ pPrint tree
                 liftIO $ putStrLn "=============================="
@@ -57,6 +57,7 @@ execSimpleStmt stmt = case parseSQLStatement stmt of
                 liftIO $ pPrint execPlan
                 liftIO $ putStrLn "=============================="
                 executePlan execPlan
+                finishTransaction
 
         _ -> return ()
 

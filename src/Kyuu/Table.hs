@@ -27,8 +27,9 @@ data TableScanIterator m = TableScanIterator { table :: Table m
 
 insertTuple :: (StorageBackend m) => Table m -> Tuple -> Kyuu m ()
 insertTuple Table { tableStorage } tuple = do
+        txn <- getCurrentTransaction
         let tupleBuf = encodeTuple tuple
-        S.insertTuple tableStorage tupleBuf
+        S.insertTuple txn tableStorage tupleBuf
 
 beginTableScan :: (StorageBackend m) => Table m -> Kyuu m (TableScanIterator m)
 beginTableScan table@Table { tableStorage } = do

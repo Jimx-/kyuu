@@ -27,13 +27,13 @@ import           Data.Maybe                     ( fromJust )
 import           Data.Map                       ( Map )
 import qualified Data.Map                      as Map
 
-lookupTableById :: (HasKState m) => OID -> m (Maybe TableSchema)
+lookupTableById :: (StorageBackend m) => OID -> Kyuu m (Maybe TableSchema)
 lookupTableById tId = do
         state <- getCatalogState
         return $ find (\TableSchema { tableId } -> tableId == tId)
                       (state ^. tableSchemas_)
 
-lookupTableIdByName :: (HasKState m) => String -> m (Maybe OID)
+lookupTableIdByName :: (StorageBackend m) => String -> Kyuu m (Maybe OID)
 lookupTableIdByName name = do
         state <- getCatalogState
         let schema = find
@@ -42,7 +42,7 @@ lookupTableIdByName name = do
                     (state ^. tableSchemas_)
         return $ fmap (\TableSchema { tableId } -> tableId) schema
 
-getTableColumns :: (HasKState m) => OID -> m [ColumnSchema]
+getTableColumns :: (StorageBackend m) => OID -> Kyuu m [ColumnSchema]
 getTableColumns tId = do
         state <- getCatalogState
         let schema = fromJust $ find
@@ -50,7 +50,8 @@ getTableColumns tId = do
                     (state ^. tableSchemas_)
         return $ tableCols schema
 
-lookupTableColumnById :: (HasKState m) => OID -> OID -> m (Maybe ColumnSchema)
+lookupTableColumnById
+        :: (StorageBackend m) => OID -> OID -> Kyuu m (Maybe ColumnSchema)
 lookupTableColumnById tId cId = do
         table <- lookupTableById tId
         case table of
@@ -61,7 +62,7 @@ lookupTableColumnById tId cId = do
                 _ -> return Nothing
 
 lookupTableColumnByName
-        :: (HasKState m) => OID -> String -> m (Maybe ColumnSchema)
+        :: (StorageBackend m) => OID -> String -> Kyuu m (Maybe ColumnSchema)
 lookupTableColumnByName tId name = do
         table <- lookupTableById tId
         case table of

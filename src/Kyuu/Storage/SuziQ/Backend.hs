@@ -32,6 +32,7 @@ instance StorageBackend SuziQ where
         type TableType SuziQ = SqTable
         type TableScanIteratorType SuziQ = SqTableScanIterator
         type TupleType SuziQ = SqTuple
+        type TransactionType SuziQ = SqTransaction
         createTable dbId tableId = do
                 db <- getDB
                 sqCreateTable db dbId tableId
@@ -40,9 +41,17 @@ instance StorageBackend SuziQ where
                 db <- getDB
                 sqOpenTable db tableId
 
-        insertTuple table tuple = do
+        startTransaction = do
                 db <- getDB
-                sqInsertTuple table db tuple
+                sqStartTransaction db
+
+        commitTransaction txn = do
+                db <- getDB
+                sqCommitTransaction db txn
+
+        insertTuple txn table tuple = do
+                db <- getDB
+                sqInsertTuple table db txn tuple
 
         beginTableScan table = do
                 db <- getDB
@@ -126,14 +135,43 @@ sqOpenTable db tableId = liftIO $ withForeignPtr db $ \database -> do
                         return $ Just foreignPtr
                 else return Nothing
 
-sqInsertTuple :: SqTable -> SqDB -> B.ByteString -> SuziQ ()
-sqInsertTuple table db tuple = do
+sqStartTransaction :: SqDB -> SuziQ SqTransaction
+sqStartTransaction db = do
+        txn <- liftIO $ withForeignPtr db $ \database -> do
+                ptr <- sq_start_transaction database
+                if ptr /= nullPtr
+                        then do
+                                foreignPtr <- newForeignPtr
+                                        sq_free_transaction
+                                        ptr
+                                return $ Just foreignPtr
+                        else return Nothing
+
+        case txn of
+                (Just txn) -> return txn
+                _          -> do
+                        err <- lastError
+                        lerror err
+
+sqCommitTransaction :: SqDB -> SqTransaction -> SuziQ ()
+sqCommitTransaction db txn = do
         result <- liftIO $ withForeignPtr db $ \database ->
-                withForeignPtr table $ \table ->
+                withForeignPtr txn $ \txn -> sq_commit_transaction database txn
+
+        error <- tryGetLastError
+        case error of
+                Nothing    -> return ()
+                (Just err) -> lerror err
+
+sqInsertTuple :: SqTable -> SqDB -> SqTransaction -> B.ByteString -> SuziQ ()
+sqInsertTuple table db txn tuple = do
+        result <- liftIO $ withForeignPtr db $ \database ->
+                withForeignPtr table $ \table -> withForeignPtr txn $ \txn ->
                         B.useAsCStringLen tuple
                                 $ \(buf, len) -> sq_table_insert_tuple
                                           table
                                           database
+                                          txn
                                           buf
                                           (fromIntegral len)
         if fromIntegral result == 1

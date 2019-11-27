@@ -4,6 +4,7 @@ module Kyuu.Storage.SuziQ.FFI
         , SqTable
         , SqTableScanIterator
         , SqTuple
+        , SqTransaction
         , sq_last_error_length
         , sq_last_error_message
         , sq_create_db
@@ -11,6 +12,9 @@ module Kyuu.Storage.SuziQ.FFI
         , sq_create_table
         , sq_open_table
         , sq_free_table
+        , sq_start_transaction
+        , sq_free_transaction
+        , sq_commit_transaction
         , sq_table_insert_tuple
         , sq_table_begin_scan
         , sq_free_table_scan_iterator
@@ -39,11 +43,13 @@ data DBPtr
 data TablePtr
 data TableScanIteratorPtr
 data TuplePtr
+data TransactionPtr
 
 type SqDB = ForeignPtr DBPtr
 type SqTable = ForeignPtr TablePtr
 type SqTableScanIterator = ForeignPtr TableScanIteratorPtr
 type SqTuple = ForeignPtr TuplePtr
+type SqTransaction = ForeignPtr TransactionPtr
 
 foreign import ccall unsafe "sq_last_error_length"
   sq_last_error_length :: IO CInt
@@ -66,8 +72,17 @@ foreign import ccall unsafe "sq_open_table"
 foreign import ccall unsafe "&sq_free_table"
   sq_free_table :: FunPtr (Ptr TablePtr -> IO ())
 
+foreign import ccall unsafe "sq_start_transaction"
+  sq_start_transaction :: Ptr DBPtr -> IO (Ptr TransactionPtr)
+
+foreign import ccall unsafe "&sq_free_transaction"
+  sq_free_transaction :: FunPtr (Ptr TransactionPtr -> IO ())
+
+foreign import ccall unsafe "sq_commit_transaction"
+  sq_commit_transaction :: Ptr DBPtr -> Ptr TransactionPtr -> IO ()
+
 foreign import ccall unsafe "sq_table_insert_tuple"
-  sq_table_insert_tuple :: Ptr TablePtr -> Ptr DBPtr -> Ptr CChar -> CInt -> IO CInt
+  sq_table_insert_tuple :: Ptr TablePtr -> Ptr DBPtr -> Ptr TransactionPtr -> Ptr CChar -> CInt -> IO CInt
 
 foreign import ccall unsafe "sq_table_begin_scan"
   sq_table_begin_scan :: Ptr TablePtr -> Ptr DBPtr -> IO (Ptr TableScanIteratorPtr)
