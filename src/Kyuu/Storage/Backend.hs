@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies, FlexibleContexts #-}
 module Kyuu.Storage.Backend
         ( StorageBackend(..)
         , ScanDirection(..)
@@ -10,16 +10,18 @@ import           Kyuu.Prelude
 import           Control.Monad.Trans.State.Lazy
 import           Control.Monad.Trans.Except
 import           Control.Monad.Trans.Class
+import           Control.Monad.Trans.Control
 
 import qualified Data.ByteString               as B
 
 data ScanDirection = Forward | Backward
 
-class MonadIO m => StorageBackend m where
+class (MonadBaseControl IO m, MonadIO m) => StorageBackend m where
     type TableType m :: *
     type TableScanIteratorType m :: *
     type TupleType m:: *
     type TransactionType m :: *
+
     createTable :: OID -> OID -> m (TableType m)
     openTable :: OID -> m (Maybe (TableType m))
     startTransaction :: m (TransactionType m)
@@ -28,6 +30,8 @@ class MonadIO m => StorageBackend m where
     beginTableScan :: TableType m -> m (TableScanIteratorType m)
     tableScanNext :: TableScanIteratorType m -> ScanDirection -> m (TableScanIteratorType m, Maybe (TupleType m))
     getTupleData :: TupleType m -> m B.ByteString
+    createCheckpoint :: m ()
+
 
 instance (StorageBackend m) => StorageBackend (StateT s m) where
         type TableType (StateT s m) = TableType m
@@ -41,7 +45,8 @@ instance (StorageBackend m) => StorageBackend (StateT s m) where
         insertTuple txn table tuple = lift $ insertTuple txn table tuple
         beginTableScan = lift . beginTableScan
         tableScanNext iterator dir = lift $ tableScanNext iterator dir
-        getTupleData = lift . getTupleData
+        getTupleData     = lift . getTupleData
+        createCheckpoint = lift createCheckpoint
 
 instance (StorageBackend m) => StorageBackend (ExceptT e m) where
         type TableType (ExceptT e m) = TableType m
@@ -55,4 +60,5 @@ instance (StorageBackend m) => StorageBackend (ExceptT e m) where
         insertTuple txn table tuple = lift $ insertTuple txn table tuple
         beginTableScan = lift . beginTableScan
         tableScanNext iterator dir = lift $ tableScanNext iterator dir
-        getTupleData = lift . getTupleData
+        getTupleData     = lift . getTupleData
+        createCheckpoint = lift createCheckpoint

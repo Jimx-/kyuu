@@ -9,7 +9,10 @@ import           Kyuu.Catalog.State
 import           Kyuu.Catalog.Catalog
 import           Kyuu.Storage.Backend
 
-import           Control.Concurrent.MVar
+import           Control.Applicative
+import           Control.Concurrent.STM
+import           Control.Concurrent.STM.TVar
+import           Control.Concurrent.STM.TMVar
 
 import           Control.Monad.Trans.Except
 import           Control.Monad.Except
@@ -19,16 +22,18 @@ import           Control.Monad.Trans.Class
 runKyuu :: (StorageBackend m, MonadIO t) => [Kyuu m ()] -> t [m ()]
 runKyuu workers = do
         let cs = initCatalogState
-        mcs   <- liftIO $ newMVar cs
-        ready <- liftIO newEmptyMVar
+        mcs   <- liftIO $ newTVarIO cs
+        cq    <- liftIO newTQueueIO
+        ready <- liftIO $ atomically newEmptyTMVar
 
-        let bootstrapThread = void $ runExceptT $ runStateT
-                    (bootstrapProg (length workers) ready)
-                    (initKyuuState mcs)
+        let     progs           = checkpointerThread cq : workers
+                bootstrapThread = void $ runExceptT $ runStateT
+                        (bootstrapProg (length progs) ready)
+                        (initKyuuState mcs cq)
 
-        threads <- forM workers $ \worker -> return $ do
-                _   <- liftIO $ takeMVar ready
-                res <- runExceptT $ runStateT worker (initKyuuState mcs)
+        threads <- forM progs $ \prog -> return $ do
+                liftIO $ atomically $ takeTMVar ready
+                res <- runExceptT $ runStateT prog (initKyuuState mcs cq)
                 case res of
                         Left err ->
                                 liftIO
@@ -40,7 +45,19 @@ runKyuu workers = do
         return $ bootstrapThread : threads
 
     where
-        bootstrapProg :: (StorageBackend m) => Int -> MVar Int -> Kyuu m ()
         bootstrapProg n ready = do
                 bootstrapCatalog
-                forM_ [1 .. n] $ \_ -> liftIO $ putMVar ready 1
+                forM_ [1 .. n] $ \_ -> liftIO $ atomically $ putTMVar ready 1
+
+        checkpointerThread cq = do
+                delay <- liftIO $ registerDelay 300000000
+                liftIO
+                        $   atomically
+                        $   Just
+                        <$> readTQueue cq
+                        <|> Nothing
+                        <$  (check <=< readTVar) delay
+
+                createCheckpoint
+
+                checkpointerThread cq

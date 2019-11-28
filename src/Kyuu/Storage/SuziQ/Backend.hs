@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleInstances, TypeFamilies #-}
 module Kyuu.Storage.SuziQ.Backend
-        ( sqCreateDB
+        ( sqInit
+        , sqCreateDB
         , runSuziQ
         , runSuziQWithDB
         )
@@ -16,6 +17,7 @@ import           Control.Monad.Trans.State.Lazy
 import           Control.Monad.Trans.Except
 import           Control.Monad.Trans.Identity
 import           Control.Monad.Trans.Class
+import           Control.Monad.Trans.Control
 
 import qualified Data.ByteString               as B
 import qualified Data.ByteString.Char8         as C
@@ -64,7 +66,14 @@ instance StorageBackend SuziQ where
                 tuple <- sqTableScanNext iterator db dir
                 return (iterator, tuple)
 
-        getTupleData = sqTupleGetData
+        getTupleData     = sqTupleGetData
+
+        createCheckpoint = do
+                db <- getDB
+                sqCreateCheckpoint db
+
+sqInit :: IO ()
+sqInit = sq_init
 
 runSuziQ :: String -> SuziQ () -> IO ()
 runSuziQ rootPath prog = do
@@ -107,7 +116,6 @@ sqCreateDB rootPath = liftIO $ withCString rootPath $ \cstr -> do
                         foreignPtr <- newForeignPtr sq_free_db ptr
                         return $ Just foreignPtr
                 else return Nothing
-
 
 sqCreateTable :: SqDB -> OID -> OID -> SuziQ SqTable
 sqCreateTable db dbId tableId = do
@@ -237,3 +245,12 @@ sqTupleGetData tuple = liftIO $ withForeignPtr tuple $ \tuple -> do
         liftIO $ allocaBytes (fromIntegral len) $ \ptr -> do
                 len <- sq_tuple_get_data tuple ptr len
                 B.packCStringLen (ptr, fromIntegral len)
+
+sqCreateCheckpoint :: SqDB -> SuziQ ()
+sqCreateCheckpoint db = control $ \runInBase ->
+        withForeignPtr db $ \database -> do
+                sq_create_checkpoint database
+                err <- tryGetLastError
+                runInBase $ case err of
+                        Nothing    -> return ()
+                        (Just err) -> lerror err

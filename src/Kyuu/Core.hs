@@ -11,6 +11,7 @@ module Kyuu.Core
         , startTransaction
         , finishTransaction
         , getCurrentTransaction
+        , requestCheckpoint
         , module X
         )
 where
@@ -22,7 +23,8 @@ import qualified Kyuu.Storage.Backend          as S
 import           Kyuu.Storage.Backend          as X
                                                 ( StorageBackend )
 
-import           Control.Concurrent.MVar
+import           Control.Concurrent.STM
+import           Control.Concurrent.STM.TVar
 
 import           Control.Lens
 import           Control.Monad.Trans.State.Lazy
@@ -38,14 +40,15 @@ import qualified Data.Map                      as Map
 
 type Transaction m = S.TransactionType m
 
-data KState m = KState { _catalogState :: MVar CatalogState
-                       , _currentTxn :: Maybe (Transaction m) }
+data KState m = KState { _catalogState :: TVar CatalogState
+                       , _currentTxn :: Maybe (Transaction m)
+                       , _checkpointRequestQueue :: TQueue () }
 
 makeLensesWith (lensRules & lensField .~ lensGen) ''KState
 
 type Kyuu m = StateT (KState m) (ExceptT Err m)
 
-initKyuuState :: MVar CatalogState -> KState m
+initKyuuState :: TVar CatalogState -> TQueue () -> KState m
 initKyuuState mcs = KState mcs Nothing
 
 getKState :: (StorageBackend m) => Kyuu m (KState m)
@@ -53,17 +56,14 @@ getKState = get
 
 getCatalogState :: (StorageBackend m) => Kyuu m CatalogState
 getCatalogState = do
-        m  <- (^. catalogState_) <$> get
-        cs <- liftIO $ takeMVar m
-        liftIO $ putMVar m cs
-        return cs
+        m <- (^. catalogState_) <$> get
+        liftIO $ readTVarIO m
 
 modifyCatalogState
         :: (StorageBackend m) => (CatalogState -> CatalogState) -> Kyuu m ()
 modifyCatalogState f = do
-        m  <- (^. catalogState_) <$> get
-        cs <- liftIO $ takeMVar m
-        liftIO $ putMVar m (f cs)
+        m <- (^. catalogState_) <$> get
+        liftIO $ atomically $ modifyTVar m f
 
 lcatch :: (StorageBackend m) => Kyuu m a -> (Err -> Kyuu m a) -> Kyuu m a
 lcatch = liftCatch catchE
@@ -101,3 +101,11 @@ getCurrentTransaction = do
                                 (InvalidState
                                         "get current transaction in invalid context"
                                 )
+
+requestCheckpoint :: (StorageBackend m) => Kyuu m ()
+requestCheckpoint =
+        (^. checkpointRequestQueue_)
+                <$> get
+                >>= liftIO
+                .   atomically
+                .   flip writeTQueue ()

@@ -31,6 +31,9 @@ dependencies:
 - pretty-simple
 - store
 - async
+- stm
+- monad-control
+- transformers-base
 
 library:
   source-dirs: src

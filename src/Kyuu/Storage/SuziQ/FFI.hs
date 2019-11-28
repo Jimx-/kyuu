@@ -5,6 +5,7 @@ module Kyuu.Storage.SuziQ.FFI
         , SqTableScanIterator
         , SqTuple
         , SqTransaction
+        , sq_init
         , sq_last_error_length
         , sq_last_error_message
         , sq_create_db
@@ -22,6 +23,7 @@ module Kyuu.Storage.SuziQ.FFI
         , sq_free_tuple
         , sq_tuple_get_data
         , sq_tuple_get_data_len
+        , sq_create_checkpoint
         )
 where
 
@@ -50,6 +52,9 @@ type SqTable = ForeignPtr TablePtr
 type SqTableScanIterator = ForeignPtr TableScanIteratorPtr
 type SqTuple = ForeignPtr TuplePtr
 type SqTransaction = ForeignPtr TransactionPtr
+
+foreign import ccall unsafe "sq_init"
+  sq_init :: IO ()
 
 foreign import ccall unsafe "sq_last_error_length"
   sq_last_error_length :: IO CInt
@@ -101,3 +106,6 @@ foreign import ccall unsafe "sq_tuple_get_data_len"
 
 foreign import ccall unsafe "sq_tuple_get_data"
   sq_tuple_get_data :: Ptr TuplePtr -> Ptr CChar -> CInt -> IO CInt
+
+foreign import ccall unsafe "sq_create_checkpoint"
+  sq_create_checkpoint :: Ptr DBPtr -> IO ()

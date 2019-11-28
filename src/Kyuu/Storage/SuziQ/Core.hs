@@ -1,4 +1,4 @@
-{-# LANGUAGE ConstraintKinds, FlexibleContexts, TemplateHaskell #-}
+{-# LANGUAGE ConstraintKinds, FlexibleContexts, TemplateHaskell, MultiParamTypeClasses, TypeFamilies, GeneralizedNewtypeDeriving #-}
 module Kyuu.Storage.SuziQ.Core
         ( SuziQ
         , unSuziQ
@@ -9,9 +9,11 @@ module Kyuu.Storage.SuziQ.Core
 where
 
 import           Control.Lens
+import           Control.Monad.Base
 import           Control.Monad.Trans.State.Lazy
 import           Control.Monad.Trans.Except
 import           Control.Monad.Trans.Class
+import           Control.Monad.Trans.Control
 import           Control.Monad.Signatures
 
 import           Kyuu.Prelude            hiding ( get )
@@ -24,20 +26,12 @@ newtype SqState = SqState { _db :: SqDB }
 makeLensesWith (lensRules & lensField .~ lensGen) ''SqState
 
 newtype SuziQ a = SuziQ { unSuziQ :: StateT SqState (ExceptT SqErr IO) a }
+  deriving (Monad, Applicative, Functor, MonadBase IO, MonadIO)
 
-instance Functor SuziQ where
-        fmap f (SuziQ x) = SuziQ $ fmap f x
-
-instance Applicative SuziQ where
-        pure = SuziQ . pure
-        (SuziQ f) <*> (SuziQ x) = SuziQ $ f <*> x
-
-instance Monad SuziQ where
-        return = SuziQ . return
-        (SuziQ x) >>= f = SuziQ $ x >>= (unSuziQ . f)
-
-instance MonadIO SuziQ where
-        liftIO = SuziQ . liftIO
+instance MonadBaseControl IO SuziQ where
+        type StM SuziQ a = (Either SqErr (a, SqState))
+        liftBaseWith f = SuziQ $ liftBaseWith $ \q -> f (q . unSuziQ)
+        restoreM = SuziQ . restoreM
 
 liftCatchS :: Catch e (StateT SqState (ExceptT SqErr IO)) a -> Catch e SuziQ a
 liftCatchS f m h = SuziQ $ f (unSuziQ m) (unSuziQ . h)
