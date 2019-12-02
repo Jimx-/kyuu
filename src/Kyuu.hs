@@ -5,6 +5,7 @@ where
 
 import           Kyuu.Prelude
 import           Kyuu.Core
+import           Kyuu.Config
 import           Kyuu.Catalog.State
 import           Kyuu.Catalog.Catalog
 import           Kyuu.Storage.Backend
@@ -19,21 +20,28 @@ import           Control.Monad.Except
 import           Control.Monad.Trans.Class
 
 -- |Perform all effects produced by the query processor
-runKyuu :: (StorageBackend m, MonadIO t) => [Kyuu m ()] -> t [m ()]
-runKyuu workers = do
+runKyuu :: (StorageBackend m, MonadIO t) => Config -> [Kyuu m ()] -> t [m ()]
+runKyuu config workers = do
         let cs = initCatalogState
         mcs   <- liftIO $ newTVarIO cs
         cq    <- liftIO newTQueueIO
         ready <- liftIO $ atomically newEmptyTMVar
 
-        let     progs           = checkpointerThread cq : workers
-                bootstrapThread = void $ runExceptT $ runStateT
-                        (bootstrapProg (length progs) ready)
-                        (initKyuuState mcs cq)
+        let     progs = checkpointerThread cq : workers
+                bootstrapThread =
+                        void
+                                $ runExceptT
+                                $ flip runStateT (initKyuuState mcs cq)
+                                $ runReaderT
+                                          (bootstrapProg (length progs) ready)
+                                          config
 
         threads <- forM progs $ \prog -> return $ do
                 liftIO $ atomically $ takeTMVar ready
-                res <- runExceptT $ runStateT prog (initKyuuState mcs cq)
+                res <-
+                        runExceptT
+                        $ flip runStateT (initKyuuState mcs cq)
+                        $ runReaderT prog config
                 case res of
                         Left err ->
                                 liftIO

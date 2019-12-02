@@ -4,6 +4,7 @@ import           Kyuu
 
 import           Kyuu.Prelude
 import           Kyuu.Core
+import           Kyuu.Config
 import           Kyuu.Error
 
 import           Kyuu.Catalog.Schema
@@ -25,13 +26,14 @@ import           Control.Concurrent.Async
 
 import qualified Data.ByteString               as B
 import           Data.Char                      ( ord )
+import           Data.Default.Class
 
 import           Text.Pretty.Simple             ( pPrint )
 
 execSimpleStmt :: (StorageBackend m) => String -> Kyuu m ()
 execSimpleStmt stmt = case parseSQLStatement stmt of
         (Right tree) -> do
-                startTransaction
+                void $ startTransaction
                 liftIO $ putStrLn "=============================="
                 liftIO $ pPrint tree
                 liftIO $ putStrLn "=============================="
@@ -74,8 +76,9 @@ prog1 = do
 
 prog2 :: (StorageBackend m) => Kyuu m ()
 prog2 = do
+        oid <- getNextOid
+        liftIO $ putStrLn $ show oid
         execSimpleStmt "select * from pg_attribute"
-        requestCheckpoint
 
 main :: IO ()
 main = do
@@ -83,7 +86,7 @@ main = do
         db <- sqCreateDB "testdb"
         case db of
                 (Just db) -> do
-                        threads <- runKyuu [prog2]
+                        threads <- runKyuu def [prog2]
                         void $ forConcurrently threads $ \thread ->
                                 runSuziQWithDB db thread
                 _ -> putStrLn "cannot create database"

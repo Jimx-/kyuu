@@ -24,6 +24,7 @@ module Kyuu.Storage.SuziQ.FFI
         , sq_tuple_get_data
         , sq_tuple_get_data_len
         , sq_create_checkpoint
+        , sq_get_next_oid
         )
 where
 
@@ -72,13 +73,13 @@ foreign import ccall unsafe "sq_create_table"
   sq_create_table :: Ptr DBPtr -> Int64 -> Int64 -> IO (Ptr TablePtr)
 
 foreign import ccall unsafe "sq_open_table"
-  sq_open_table :: Ptr DBPtr -> Int64 -> IO (Ptr TablePtr)
+  sq_open_table :: Ptr DBPtr -> Int64 -> Int64 -> IO (Ptr TablePtr)
 
 foreign import ccall unsafe "&sq_free_table"
   sq_free_table :: FunPtr (Ptr TablePtr -> IO ())
 
 foreign import ccall unsafe "sq_start_transaction"
-  sq_start_transaction :: Ptr DBPtr -> IO (Ptr TransactionPtr)
+  sq_start_transaction :: Ptr DBPtr -> CInt -> IO (Ptr TransactionPtr)
 
 foreign import ccall unsafe "&sq_free_transaction"
   sq_free_transaction :: FunPtr (Ptr TransactionPtr -> IO ())
@@ -90,7 +91,7 @@ foreign import ccall unsafe "sq_table_insert_tuple"
   sq_table_insert_tuple :: Ptr TablePtr -> Ptr DBPtr -> Ptr TransactionPtr -> Ptr CChar -> CInt -> IO CInt
 
 foreign import ccall unsafe "sq_table_begin_scan"
-  sq_table_begin_scan :: Ptr TablePtr -> Ptr DBPtr -> IO (Ptr TableScanIteratorPtr)
+  sq_table_begin_scan :: Ptr TablePtr -> Ptr DBPtr -> Ptr TransactionPtr -> IO (Ptr TableScanIteratorPtr)
 
 foreign import ccall unsafe "&sq_free_table_scan_iterator"
   sq_free_table_scan_iterator :: FunPtr (Ptr TableScanIteratorPtr -> IO ())
@@ -109,3 +110,6 @@ foreign import ccall unsafe "sq_tuple_get_data"
 
 foreign import ccall unsafe "sq_create_checkpoint"
   sq_create_checkpoint :: Ptr DBPtr -> IO ()
+
+foreign import ccall unsafe "sq_get_next_oid"
+  sq_get_next_oid :: Ptr DBPtr -> IO Int64

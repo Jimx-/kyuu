@@ -41,13 +41,13 @@ instance StorageBackend SuziQ where
                 db <- getDB
                 sqCreateTable db dbId tableId
 
-        openTable tableId = do
+        openTable dbId tableId = do
                 db <- getDB
-                sqOpenTable db tableId
+                sqOpenTable db dbId tableId
 
-        startTransaction = do
+        startTransaction isolationLevel = do
                 db <- getDB
-                sqStartTransaction db
+                sqStartTransaction db isolationLevel
 
         commitTransaction txn = do
                 db <- getDB
@@ -57,9 +57,9 @@ instance StorageBackend SuziQ where
                 db <- getDB
                 sqInsertTuple table db txn tuple
 
-        beginTableScan table = do
+        beginTableScan txn table = do
                 db <- getDB
-                sqBeginTableScan table db
+                sqBeginTableScan table db txn
 
         tableScanNext iterator dir = do
                 db    <- getDB
@@ -71,6 +71,10 @@ instance StorageBackend SuziQ where
         createCheckpoint = do
                 db <- getDB
                 sqCreateCheckpoint db
+
+        getNextOid = do
+                db <- getDB
+                sqGetNextOid db
 
 sqInit :: IO ()
 sqInit = sq_init
@@ -115,7 +119,10 @@ sqCreateDB rootPath = liftIO $ withCString rootPath $ \cstr -> do
                 then do
                         foreignPtr <- newForeignPtr sq_free_db ptr
                         return $ Just foreignPtr
-                else return Nothing
+                else do
+                        err <- lastError
+                        liftIO $ putStrLn $ show err
+                        return Nothing
 
 sqCreateTable :: SqDB -> OID -> OID -> SuziQ SqTable
 sqCreateTable db dbId tableId = do
@@ -135,19 +142,35 @@ sqCreateTable db dbId tableId = do
                         err <- lastError
                         lerror err
 
-sqOpenTable :: SqDB -> OID -> SuziQ (Maybe SqTable)
-sqOpenTable db tableId = liftIO $ withForeignPtr db $ \database -> do
-        ptr <- sq_open_table database (fromIntegral tableId)
-        if ptr /= nullPtr
-                then do
-                        foreignPtr <- newForeignPtr sq_free_table ptr
-                        return $ Just foreignPtr
-                else return Nothing
+sqOpenTable :: SqDB -> OID -> OID -> SuziQ (Maybe SqTable)
+sqOpenTable db dbId tableId = control $ \runInBase ->
+        withForeignPtr db $ \database -> do
+                ptr <- sq_open_table database
+                                     (fromIntegral dbId)
+                                     (fromIntegral tableId)
+                runInBase $ if ptr /= nullPtr
+                        then do
+                                foreignPtr <- liftIO
+                                        $ newForeignPtr sq_free_table ptr
+                                return $ Just foreignPtr
+                        else do
+                                err <- tryGetLastError
+                                case err of
+                                        (Just err) -> lerror err
+                                        _          -> return Nothing
 
-sqStartTransaction :: SqDB -> SuziQ SqTransaction
-sqStartTransaction db = do
+getIsolationLevel :: IsolationLevel -> Int
+getIsolationLevel ReadUncommitted = 0
+getIsolationLevel ReadCommitted   = 1
+getIsolationLevel RepeatableRead  = 2
+getIsolationLevel Serializable    = 3
+
+sqStartTransaction :: SqDB -> IsolationLevel -> SuziQ SqTransaction
+sqStartTransaction db isoLevel = do
         txn <- liftIO $ withForeignPtr db $ \database -> do
-                ptr <- sq_start_transaction database
+                ptr <- sq_start_transaction
+                        database
+                        (fromIntegral $ getIsolationLevel isoLevel)
                 if ptr /= nullPtr
                         then do
                                 foreignPtr <- newForeignPtr
@@ -189,19 +212,23 @@ sqInsertTuple table db txn tuple = do
                         err <- lastError
                         lerror err
 
-sqBeginTableScan :: SqTable -> SqDB -> SuziQ SqTableScanIterator
-sqBeginTableScan table db = do
-        iterator <- liftIO $ withForeignPtr db $ \database ->
-                withForeignPtr table $ \table -> do
-                        ptr <- sq_table_begin_scan table database
+sqBeginTableScan
+        :: SqTable -> SqDB -> SqTransaction -> SuziQ SqTableScanIterator
+sqBeginTableScan table db txn = do
+        iterator <-
+                liftIO
+                $ withForeignPtr db
+                $ \database -> withForeignPtr table $ \table ->
+                          withForeignPtr txn $ \txn -> do
+                                  ptr <- sq_table_begin_scan table database txn
 
-                        if ptr /= nullPtr
-                                then do
-                                        foreignPtr <- newForeignPtr
-                                                sq_free_table_scan_iterator
-                                                ptr
-                                        return $ Just foreignPtr
-                                else return Nothing
+                                  if ptr /= nullPtr
+                                          then do
+                                                  foreignPtr <- newForeignPtr
+                                                          sq_free_table_scan_iterator
+                                                          ptr
+                                                  return $ Just foreignPtr
+                                          else return Nothing
 
         case iterator of
                 (Just iterator) -> return iterator
@@ -254,3 +281,11 @@ sqCreateCheckpoint db = control $ \runInBase ->
                 runInBase $ case err of
                         Nothing    -> return ()
                         (Just err) -> lerror err
+
+sqGetNextOid :: SqDB -> SuziQ OID
+sqGetNextOid db = control $ \runInBase -> withForeignPtr db $ \database -> do
+        oid <- sq_get_next_oid database
+        err <- tryGetLastError
+        runInBase $ case err of
+                Nothing    -> return (fromIntegral oid)
+                (Just err) -> lerror err

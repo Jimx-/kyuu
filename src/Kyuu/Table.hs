@@ -33,7 +33,8 @@ insertTuple Table { tableStorage } tuple = do
 
 beginTableScan :: (StorageBackend m) => Table m -> Kyuu m (TableScanIterator m)
 beginTableScan table@Table { tableStorage } = do
-        iterator <- S.beginTableScan tableStorage
+        txn      <- getCurrentTransaction
+        iterator <- S.beginTableScan txn tableStorage
         return $ TableScanIterator table iterator
 
 tableScanNext

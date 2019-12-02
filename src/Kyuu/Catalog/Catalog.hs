@@ -105,7 +105,7 @@ openTable tableId = do
         case schema of
                 Nothing       -> return Nothing
                 (Just schema) -> do
-                        storage <- S.openTable tableId
+                        storage <- S.openTable 1 tableId
                         case storage of
                                 (Just storage) ->
                                         return
@@ -128,7 +128,7 @@ bootstrapCatalog = do
         forM_ systemTables $ \schema ->
                 modifyCatalogState $ over tableSchemas_ (schema :)
 
-        pgClassStorage <- S.openTable pgClassTableId
+        pgClassStorage <- S.openTable catalogDatabaseId pgClassTableId
         case pgClassStorage of
                 (Just _) -> return ()
                 _        -> createSystemTables systemTables

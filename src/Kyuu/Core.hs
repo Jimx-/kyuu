@@ -12,10 +12,12 @@ module Kyuu.Core
         , finishTransaction
         , getCurrentTransaction
         , requestCheckpoint
+        , getNextOid
         , module X
         )
 where
 
+import           Kyuu.Config
 import           Kyuu.Error
 import           Kyuu.Catalog.State
 import           Kyuu.Prelude
@@ -30,8 +32,14 @@ import           Control.Lens
 import           Control.Monad.Trans.State.Lazy
                                          hiding ( get
                                                 , modify
+                                                , liftCatch
                                                 )
+import qualified Control.Monad.Trans.State.Lazy
+                                               as ST
+
 import           Control.Monad.Trans.Except
+import           Control.Monad.Trans.Reader     ( ReaderT )
+import qualified Control.Monad.Trans.Reader    as R
 import           Control.Monad.Except
 import           Control.Monad.Trans.Class
 
@@ -46,7 +54,7 @@ data KState m = KState { _catalogState :: TVar CatalogState
 
 makeLensesWith (lensRules & lensField .~ lensGen) ''KState
 
-type Kyuu m = StateT (KState m) (ExceptT Err m)
+type Kyuu m = ReaderT Config (StateT (KState m) (ExceptT Err m))
 
 initKyuuState :: TVar CatalogState -> TQueue () -> KState m
 initKyuuState mcs = KState mcs Nothing
@@ -66,10 +74,10 @@ modifyCatalogState f = do
         liftIO $ atomically $ modifyTVar m f
 
 lcatch :: (StorageBackend m) => Kyuu m a -> (Err -> Kyuu m a) -> Kyuu m a
-lcatch = liftCatch catchE
+lcatch = R.liftCatch $ ST.liftCatch catchE
 
 lerror :: (StorageBackend m) => Err -> Kyuu m a
-lerror = lift . throwE
+lerror = lift . lift . throwE
 
 startTransaction :: (StorageBackend m) => Kyuu m (Transaction m)
 startTransaction = do
@@ -77,7 +85,8 @@ startTransaction = do
         case currentTxn of
                 (Just txn) -> return txn
                 Nothing    -> do
-                        txn <- S.startTransaction
+                        isoLevel <- getConfig defaultIsolationLevel_
+                        txn      <- S.startTransaction isoLevel
                         modify $ set currentTxn_ (Just txn)
                         return txn
 
@@ -109,3 +118,6 @@ requestCheckpoint =
                 >>= liftIO
                 .   atomically
                 .   flip writeTQueue ()
+
+getNextOid :: (StorageBackend m) => Kyuu m OID
+getNextOid = S.getNextOid
