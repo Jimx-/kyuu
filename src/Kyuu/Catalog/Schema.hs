@@ -3,6 +3,7 @@ module Kyuu.Catalog.Schema
         ( SchemaType(..)
         , ColumnSchema(..)
         , TableSchema(..)
+        , IndexSchema(..)
         )
 where
 
@@ -24,4 +25,10 @@ data ColumnSchema = ColumnSchema { colTable :: OID
 data TableSchema = TableSchema { tableId :: OID
                                , tableName :: String
                                , tableCols :: [ColumnSchema]}
+                 deriving (Eq, Show)
+
+data IndexSchema = IndexSchema { indexId :: OID
+                               , indexTableId :: OID
+                               , numAttrs :: Int
+                               }
                  deriving (Eq, Show)

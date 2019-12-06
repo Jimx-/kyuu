@@ -27,27 +27,37 @@ class (MonadBaseControl IO m, MonadIO m) => StorageBackend m where
     type TableType m :: *
     type TableScanIteratorType m :: *
     type TupleType m:: *
+    type TupleSlotType m:: *
+    type IndexType m :: *
+    type IndexScanIteratorType m :: *
     type TransactionType m :: *
 
     createTable :: OID -> OID -> m (TableType m)
     openTable :: OID -> OID -> m (Maybe (TableType m))
+    createIndex :: OID -> OID -> m (IndexType m)
+    openIndex :: OID -> OID -> m (Maybe (IndexType m))
     startTransaction :: IsolationLevel -> m (TransactionType m)
     commitTransaction :: TransactionType m -> m ()
-    insertTuple :: TransactionType m -> TableType m -> B.ByteString -> m ()
+    insertTuple :: TransactionType m -> TableType m -> B.ByteString -> m (TupleSlotType m)
     beginTableScan :: TransactionType m -> TableType m -> m (TableScanIteratorType m)
     tableScanNext :: TableScanIteratorType m -> ScanDirection -> m (TableScanIteratorType m, Maybe (TupleType m))
     getTupleData :: TupleType m -> m B.ByteString
     createCheckpoint :: m ()
     getNextOid :: m OID
+    insertIndex :: IndexType m -> B.ByteString -> (B.ByteString -> B.ByteString -> Maybe Ordering) -> TupleSlotType m -> m ()
 
-
-instance (StorageBackend m) => StorageBackend (StateT s m) where
+instance StorageBackend m => StorageBackend (StateT s m) where
         type TableType (StateT s m) = TableType m
         type TableScanIteratorType (StateT s m) = TableScanIteratorType m
         type TupleType (StateT s m) = TupleType m
+        type TupleSlotType (StateT s m) = TupleSlotType m
+        type IndexType (StateT s m) = IndexType m
+        type IndexScanIteratorType (StateT s m) = IndexScanIteratorType m
         type TransactionType (StateT s m) = TransactionType m
         createTable dbId tableId = lift $ createTable dbId tableId
         openTable dbId tableId = lift $ openTable dbId tableId
+        createIndex dbId indexId = lift $ createIndex dbId indexId
+        openIndex dbId indexId = lift $ openIndex dbId indexId
         startTransaction  = lift . startTransaction
         commitTransaction = lift . commitTransaction
         insertTuple txn table tuple = lift $ insertTuple txn table tuple
@@ -56,14 +66,21 @@ instance (StorageBackend m) => StorageBackend (StateT s m) where
         getTupleData     = lift . getTupleData
         createCheckpoint = lift createCheckpoint
         getNextOid       = lift getNextOid
+        insertIndex index key keyComp tupleSlot =
+                lift $ insertIndex index key keyComp tupleSlot
 
-instance (StorageBackend m) => StorageBackend (ExceptT e m) where
+instance StorageBackend m => StorageBackend (ExceptT e m) where
         type TableType (ExceptT e m) = TableType m
         type TableScanIteratorType (ExceptT e m) = TableScanIteratorType m
         type TupleType (ExceptT e m) = TupleType m
+        type TupleSlotType (ExceptT e m) = TupleSlotType m
+        type IndexType (ExceptT e m) = IndexType m
+        type IndexScanIteratorType (ExceptT e m) = IndexScanIteratorType m
         type TransactionType (ExceptT e m) = TransactionType m
         createTable dbId tableId = lift $ createTable dbId tableId
         openTable dbId tableId = lift $ openTable dbId tableId
+        createIndex dbId indexId = lift $ createIndex dbId indexId
+        openIndex dbId indexId = lift $ openIndex dbId indexId
         startTransaction  = lift . startTransaction
         commitTransaction = lift . commitTransaction
         insertTuple txn table tuple = lift $ insertTuple txn table tuple
@@ -72,14 +89,22 @@ instance (StorageBackend m) => StorageBackend (ExceptT e m) where
         getTupleData     = lift . getTupleData
         createCheckpoint = lift createCheckpoint
         getNextOid       = lift getNextOid
+        insertIndex index key keyComp tupleSlot =
+                lift $ insertIndex index key keyComp tupleSlot
 
-instance (StorageBackend m) => StorageBackend (ReaderT r m) where
+
+instance StorageBackend m => StorageBackend (ReaderT r m) where
         type TableType (ReaderT r m) = TableType m
         type TableScanIteratorType (ReaderT r m) = TableScanIteratorType m
         type TupleType (ReaderT r m) = TupleType m
+        type TupleSlotType (ReaderT r m) = TupleSlotType m
+        type IndexType (ReaderT r m) = IndexType m
+        type IndexScanIteratorType (ReaderT r m) = IndexScanIteratorType m
         type TransactionType (ReaderT r m) = TransactionType m
         createTable dbId tableId = lift $ createTable dbId tableId
         openTable dbId tableId = lift $ openTable dbId tableId
+        createIndex dbId indexId = lift $ createIndex dbId indexId
+        openIndex dbId indexId = lift $ openIndex dbId indexId
         startTransaction  = lift . startTransaction
         commitTransaction = lift . commitTransaction
         insertTuple txn table tuple = lift $ insertTuple txn table tuple
@@ -88,3 +113,5 @@ instance (StorageBackend m) => StorageBackend (ReaderT r m) where
         getTupleData     = lift . getTupleData
         createCheckpoint = lift createCheckpoint
         getNextOid       = lift getNextOid
+        insertIndex index key keyComp tupleSlot =
+                lift $ insertIndex index key keyComp tupleSlot

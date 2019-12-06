@@ -10,6 +10,7 @@ module Kyuu.Catalog.Catalog
         , lookupTableColumnByName
         , createTableWithCatalog
         , openTable
+        , openIndex
         )
 where
 
@@ -20,10 +21,11 @@ import           Kyuu.Catalog.State
 import           Kyuu.Catalog.Tables
 import           Kyuu.Error
 import           Kyuu.Table
+import           Kyuu.Index
 import           Kyuu.Value
 import qualified Kyuu.Storage.Backend          as S
 
-import           Control.Lens
+import           Control.Lens            hiding ( Index )
 
 import           Data.List                      ( find )
 import           Data.Maybe                     ( fromJust )
@@ -122,30 +124,76 @@ openTable tableId = do
                                                                      tableId
                                                           )
 
+lookupIndexById :: (StorageBackend m) => OID -> Kyuu m (Maybe IndexSchema)
+lookupIndexById indId = do
+        state <- getCatalogState
+        return $ find (\IndexSchema { indexId } -> indexId == indId)
+                      (state ^. indexSchemas_)
+
+openIndex :: (StorageBackend m) => OID -> Kyuu m (Maybe (Index m))
+openIndex indexId = do
+        schema <- lookupIndexById indexId
+
+        case schema of
+                Nothing       -> return Nothing
+                (Just schema) -> do
+                        storage <- S.openIndex 1 indexId
+                        case storage of
+                                (Just storage) ->
+                                        return
+                                                $ Just
+                                                          (Index indexId
+                                                                 schema
+                                                                 storage
+                                                          )
+                                _ ->
+                                        lerror
+                                                $ InvalidState
+                                                          ("storage not created for index "
+                                                          ++ show
+                                                                     indexId
+                                                          )
+
 bootstrapCatalog :: (StorageBackend m) => Kyuu m ()
 bootstrapCatalog = do
-        let systemTables = [pgClassTableSchema, pgAttributeTableSchema]
+        let     systemTables =
+                        [ pgClassTableSchema
+                        , pgAttributeTableSchema
+                        , pgIndexTableSchema
+                        ]
+                systemIndexes = [classOidIndexSchema]
+
         forM_ systemTables $ \schema ->
                 modifyCatalogState $ over tableSchemas_ (schema :)
+
+        forM_ systemIndexes $ \schema ->
+                modifyCatalogState $ over indexSchemas_ (schema :)
 
         pgClassStorage <- S.openTable catalogDatabaseId pgClassTableId
         case pgClassStorage of
                 (Just _) -> return ()
-                _        -> createSystemTables systemTables
+                _ -> createSystemTablesAndIndexes systemTables systemIndexes
 
-createSystemTables :: (StorageBackend m) => [TableSchema] -> Kyuu m ()
-createSystemTables tables = do
+createSystemTablesAndIndexes
+        :: (StorageBackend m) => [TableSchema] -> [IndexSchema] -> Kyuu m ()
+createSystemTablesAndIndexes tables indexes = do
         startTransaction
 
         forM_ tables $ \(TableSchema tableId _ _) ->
                 S.createTable catalogDatabaseId tableId
 
+        forM_ indexes $ \(IndexSchema indexId _ _) ->
+                S.createIndex catalogDatabaseId indexId
+
         pgClassTable     <- fromJust <$> openTable pgClassTableId
         pgAttributeTable <- fromJust <$> openTable pgAttributeTableId
+        pgIndexTable     <- fromJust <$> openTable pgIndexTableId
+        classOidIndex    <- fromJust <$> openIndex classOidIndexId
 
         forM_ tables $ \(TableSchema tableId tableName tableCols) -> do
                 let tuple = Tuple [] [VInt tableId, VString tableName]
-                insertTuple pgClassTable tuple
+                slot <- insertTuple pgClassTable tuple
+                insertIndex classOidIndex (Tuple [] [VInt tableId]) slot
 
                 forM_ tableCols $ \(ColumnSchema _ colId colName colType) -> do
                         let
@@ -156,5 +204,12 @@ createSystemTables tables = do
                                         , VInt colId
                                         ]
                         insertTuple pgAttributeTable tuple
+
+        forM_ indexes $ \(IndexSchema indexId indexTableId numAttrs) -> do
+                let
+                        tuple = Tuple
+                                []
+                                [VInt indexId, VInt indexTableId, VInt numAttrs]
+                insertTuple pgIndexTable tuple
 
         finishTransaction

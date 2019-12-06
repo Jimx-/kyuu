@@ -36,6 +36,9 @@ instance StorageBackend SuziQ where
         type TableType SuziQ = SqTable
         type TableScanIteratorType SuziQ = SqTableScanIterator
         type TupleType SuziQ = SqTuple
+        type TupleSlotType SuziQ = SqTupleSlot
+        type IndexType SuziQ = SqIndex
+        type IndexScanIteratorType SuziQ = SqIndexScanIterator
         type TransactionType SuziQ = SqTransaction
         createTable dbId tableId = do
                 db <- getDB
@@ -44,6 +47,14 @@ instance StorageBackend SuziQ where
         openTable dbId tableId = do
                 db <- getDB
                 sqOpenTable db dbId tableId
+
+        createIndex dbId indexId = do
+                db <- getDB
+                sqCreateIndex db dbId indexId
+
+        openIndex dbId indexId = do
+                db <- getDB
+                sqOpenIndex db dbId indexId
 
         startTransaction isolationLevel = do
                 db <- getDB
@@ -76,6 +87,10 @@ instance StorageBackend SuziQ where
                 db <- getDB
                 sqGetNextOid db
 
+        insertIndex index key keyComp tupleSlot = do
+                db <- getDB
+                sqInsertIndex db index key keyComp tupleSlot
+
 sqInit :: IO ()
 sqInit = sq_init
 
@@ -103,9 +118,7 @@ lastErrorMessage = do
         return $ C.unpack msg
 
 lastError :: (MonadIO m) => m SqErr
-lastError = do
-        msg <- lastErrorMessage
-        return $ Msg msg
+lastError = Msg <$> lastErrorMessage
 
 tryGetLastError :: (MonadIO m) => m (Maybe SqErr)
 tryGetLastError = do
@@ -121,26 +134,20 @@ sqCreateDB rootPath = liftIO $ withCString rootPath $ \cstr -> do
                         return $ Just foreignPtr
                 else do
                         err <- lastError
-                        liftIO $ putStrLn $ show err
                         return Nothing
 
 sqCreateTable :: SqDB -> OID -> OID -> SuziQ SqTable
-sqCreateTable db dbId tableId = do
-        table <- liftIO $ withForeignPtr db $ \database -> do
+sqCreateTable db dbId tableId = control $ \runInBase ->
+        withForeignPtr db $ \database -> do
                 ptr <- sq_create_table database
                                        (fromIntegral dbId)
                                        (fromIntegral tableId)
-                if ptr /= nullPtr
-                        then do
-                                foreignPtr <- newForeignPtr sq_free_table ptr
-                                return $ Just foreignPtr
-                        else return Nothing
+                runInBase $ if ptr /= nullPtr
+                        then liftIO $ newForeignPtr sq_free_table ptr
+                        else do
+                                err <- lastError
+                                lerror err
 
-        case table of
-                (Just table) -> return table
-                _            -> do
-                        err <- lastError
-                        lerror err
 
 sqOpenTable :: SqDB -> OID -> OID -> SuziQ (Maybe SqTable)
 sqOpenTable db dbId tableId = control $ \runInBase ->
@@ -152,6 +159,36 @@ sqOpenTable db dbId tableId = control $ \runInBase ->
                         then do
                                 foreignPtr <- liftIO
                                         $ newForeignPtr sq_free_table ptr
+                                return $ Just foreignPtr
+                        else do
+                                err <- tryGetLastError
+                                case err of
+                                        (Just err) -> lerror err
+                                        _          -> return Nothing
+
+sqCreateIndex :: SqDB -> OID -> OID -> SuziQ SqIndex
+sqCreateIndex db dbId indexId = control $ \runInBase ->
+        withForeignPtr db $ \database -> do
+                ptr <- sq_create_index database
+                                       (fromIntegral dbId)
+                                       (fromIntegral indexId)
+                runInBase $ if ptr /= nullPtr
+                        then liftIO $ newForeignPtr sq_free_index ptr
+                        else do
+                                err <- lastError
+                                lerror err
+
+
+sqOpenIndex :: SqDB -> OID -> OID -> SuziQ (Maybe SqIndex)
+sqOpenIndex db dbId indexId = control $ \runInBase ->
+        withForeignPtr db $ \database -> do
+                ptr <- sq_open_index database
+                                     (fromIntegral dbId)
+                                     (fromIntegral indexId)
+                runInBase $ if ptr /= nullPtr
+                        then do
+                                foreignPtr <- liftIO
+                                        $ newForeignPtr sq_free_index ptr
                                 return $ Just foreignPtr
                         else do
                                 err <- tryGetLastError
@@ -195,22 +232,26 @@ sqCommitTransaction db txn = do
                 Nothing    -> return ()
                 (Just err) -> lerror err
 
-sqInsertTuple :: SqTable -> SqDB -> SqTransaction -> B.ByteString -> SuziQ ()
-sqInsertTuple table db txn tuple = do
-        result <- liftIO $ withForeignPtr db $ \database ->
-                withForeignPtr table $ \table -> withForeignPtr txn $ \txn ->
-                        B.useAsCStringLen tuple
-                                $ \(buf, len) -> sq_table_insert_tuple
-                                          table
-                                          database
-                                          txn
-                                          buf
-                                          (fromIntegral len)
-        if fromIntegral result == 1
-                then return ()
-                else do
-                        err <- lastError
-                        lerror err
+sqInsertTuple
+        :: SqTable -> SqDB -> SqTransaction -> B.ByteString -> SuziQ SqTupleSlot
+sqInsertTuple table db txn tuple = control $ \runInBase -> do
+        withForeignPtr db $ \database -> withForeignPtr table $ \table ->
+                withForeignPtr txn $ \txn ->
+                        B.useAsCStringLen tuple $ \(buf, len) -> do
+                                ptr <- sq_table_insert_tuple
+                                        table
+                                        database
+                                        txn
+                                        buf
+                                        (fromIntegral len)
+                                runInBase $ if ptr /= nullPtr
+                                        then liftIO $ newForeignPtr
+                                                sq_free_item_pointer
+                                                ptr
+                                        else do
+                                                err <- lastError
+                                                lerror err
+
 
 sqBeginTableScan
         :: SqTable -> SqDB -> SqTransaction -> SuziQ SqTableScanIterator
@@ -289,3 +330,45 @@ sqGetNextOid db = control $ \runInBase -> withForeignPtr db $ \database -> do
         runInBase $ case err of
                 Nothing    -> return (fromIntegral oid)
                 (Just err) -> lerror err
+
+getOrdering :: Ordering -> Int
+getOrdering LT = -1
+getOrdering EQ = 0
+getOrdering GT = 1
+
+getIndexKeyComparator
+        :: (B.ByteString -> B.ByteString -> Maybe Ordering)
+        -> RawIndexKeyComparatorFunc
+getIndexKeyComparator f aPtr aLen bPtr bLen = do
+        aStr <- B.packCStringLen (aPtr, fromIntegral aLen)
+        bStr <- B.packCStringLen (bPtr, fromIntegral bLen)
+
+        case f aStr bStr of
+                (Just ord) -> return $ fromIntegral $ getOrdering ord
+                _          -> return 2
+
+
+sqInsertIndex
+        :: SqDB
+        -> SqIndex
+        -> B.ByteString
+        -> (B.ByteString -> B.ByteString -> Maybe Ordering)
+        -> SqTupleSlot
+        -> SuziQ ()
+sqInsertIndex db index key keyComp slot = control $ \runInBase ->
+        withForeignPtr db $ \database -> withForeignPtr index $ \index ->
+                withForeignPtr slot $ \slot ->
+                        B.useAsCStringLen key $ \(keyPtr, keyLen) -> do
+                                keyCompFunc <- sqWrapRawIndexKeyComparator
+                                        $ getIndexKeyComparator keyComp
+                                sq_index_insert database
+                                                index
+                                                keyPtr
+                                                (fromIntegral keyLen)
+                                                keyCompFunc
+                                                slot
+                                freeHaskellFunPtr keyCompFunc
+                                err <- tryGetLastError
+                                runInBase $ case err of
+                                        Nothing    -> return ()
+                                        (Just err) -> lerror err

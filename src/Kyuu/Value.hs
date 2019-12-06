@@ -7,6 +7,7 @@ module Kyuu.Value
         , sortTuple
         , encodeTuple
         , decodeTuple
+        , decodeTupleValues
         )
 where
 
@@ -63,10 +64,15 @@ encodeTuple :: Tuple -> B.ByteString
 encodeTuple (Tuple _ vals) = encode vals
 
 decodeTuple :: B.ByteString -> TableSchema -> Maybe Tuple
-decodeTuple buf TableSchema { tableCols } = case decode buf of
-        (Right vals) -> Just $ Tuple tupleDesc vals
-        _            -> Nothing
+decodeTuple buf TableSchema { tableCols } = case decodeTupleValues buf of
+        (Just (Tuple [] vs)) -> Just $ Tuple tupleDesc vs
+        _                    -> Nothing
     where
         tupleDesc = map
                 (\ColumnSchema { colTable, colId } -> ColumnDesc colTable colId)
                 tableCols
+
+decodeTupleValues :: B.ByteString -> Maybe Tuple
+decodeTupleValues buf = case decode buf of
+        (Right vals) -> Just $ Tuple [] vals
+        _            -> Nothing

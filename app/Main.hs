@@ -76,9 +76,7 @@ prog1 = do
 
 prog2 :: (StorageBackend m) => Kyuu m ()
 prog2 = do
-        oid <- getNextOid
-        liftIO $ putStrLn $ show oid
-        execSimpleStmt "select * from pg_attribute"
+        execSimpleStmt "select * from pg_index"
 
 main :: IO ()
 main = do

@@ -1,6 +1,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 module Kyuu.Table
-        ( Table(..)
+        ( TupleSlot
+        , Table(..)
         , TableScanIterator
         , insertTuple
         , beginTableScan
@@ -18,6 +19,8 @@ import qualified Kyuu.Storage.Backend          as S
 import           Kyuu.Storage.Backend          as X
                                                 ( ScanDirection(..) )
 
+type TupleSlot m = S.TupleSlotType m
+
 data Table m = Table { tableId :: OID
                      , tableSchema :: TableSchema
                      , tableStorage :: S.TableType m}
@@ -25,7 +28,7 @@ data Table m = Table { tableId :: OID
 data TableScanIterator m = TableScanIterator { table :: Table m
                                              , iterator :: S.TableScanIteratorType m }
 
-insertTuple :: (StorageBackend m) => Table m -> Tuple -> Kyuu m ()
+insertTuple :: (StorageBackend m) => Table m -> Tuple -> Kyuu m (TupleSlot m)
 insertTuple Table { tableStorage } tuple = do
         txn <- getCurrentTransaction
         let tupleBuf = encodeTuple tuple

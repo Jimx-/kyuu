@@ -8,6 +8,7 @@ module Kyuu.Expression
         , isSargableExpr
         , evalExpr
         , evalBinOpExpr
+        , compareTuple
         )
 where
 
@@ -80,3 +81,18 @@ evalExpr (BinOpExpr op left right) tuple = do
         return $ evalBinOpExpr op lval rval
 
 evalExpr (ValueExpr v) _ = return v
+
+compareTuple :: Tuple -> Tuple -> Ordering
+compareTuple (Tuple _ (v1 : vs1)) (Tuple _ (v2 : vs2)) =
+        let
+                gt = evalBinOpExpr BGreaterThan v1 v2
+                eq = evalBinOpExpr BEqual v1 v2
+        in
+                case (gt, eq) of
+                        (VBool True , _          ) -> GT
+                        (VBool False, VBool False) -> LT
+                        (VBool False, VBool True) ->
+                                compareTuple (Tuple [] vs1) (Tuple [] vs2)
+compareTuple (Tuple _ (v : vs)) (Tuple _ []      ) = GT
+compareTuple (Tuple _ []      ) (Tuple _ (v : vs)) = LT
+compareTuple _                  _                  = EQ

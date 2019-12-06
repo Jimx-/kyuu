@@ -25,7 +25,7 @@ runKyuu config workers = do
         let cs = initCatalogState
         mcs   <- liftIO $ newTVarIO cs
         cq    <- liftIO newTQueueIO
-        ready <- liftIO $ atomically newEmptyTMVar
+        ready <- liftIO newEmptyTMVarIO
 
         let     progs = checkpointerThread cq : workers
                 bootstrapThread =

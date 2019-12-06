@@ -19,7 +19,7 @@ data Config = Config { _defaultIsolationLevel :: IsolationLevel }
 
 makeLensesWith (lensRules & lensField .~ lensGen) ''Config
 
-getConfig :: (MonadIO m, MonadReader r m, Has Config r) => Iso' Config a -> m a
+getConfig :: (MonadIO m, MonadReader r m, Has Config r) => Lens' Config a -> m a
 getConfig l = view l <$> asks getter
 
 instance Default Config where
