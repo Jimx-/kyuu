@@ -76,7 +76,7 @@ prog1 = do
 
 prog2 :: (StorageBackend m) => Kyuu m ()
 prog2 = do
-        execSimpleStmt "select * from pg_index"
+        execSimpleStmt "select * from pg_attribute"
 
 main :: IO ()
 main = do

@@ -15,7 +15,7 @@ data SchemaType = SNull
                 | SDouble
                 | SString
                 | SIntList
-                deriving (Eq, Show)
+                deriving (Eq, Show, Enum)
 
 data ColumnSchema = ColumnSchema { colTable :: OID
                                  , colId :: OID

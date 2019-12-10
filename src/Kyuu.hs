@@ -23,7 +23,7 @@ import           Control.Monad.Trans.Class
 runKyuu :: (StorageBackend m, MonadIO t) => Config -> [Kyuu m ()] -> t [m ()]
 runKyuu config workers = do
         let cs = initCatalogState
-        mcs   <- liftIO $ newTVarIO cs
+        mcs   <- liftIO $ newTMVarIO cs
         cq    <- liftIO newTQueueIO
         ready <- liftIO newEmptyTMVarIO
 

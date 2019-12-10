@@ -23,6 +23,7 @@ import           Kyuu.Error
 import           Kyuu.Table
 import           Kyuu.Index
 import           Kyuu.Value
+import           Kyuu.Expression
 import qualified Kyuu.Storage.Backend          as S
 
 import           Control.Lens            hiding ( Index )
@@ -40,6 +41,33 @@ lookupTableById tId = do
         state <- getCatalogState
         return $ find (\TableSchema { tableId } -> tableId == tId)
                       (state ^. tableSchemas_)
+
+getTableById :: (StorageBackend m) => OID -> Kyuu m (Maybe TableSchema)
+getTableById tableId = do
+        state <- takeCatalogState
+
+        case
+                        find
+                                (\TableSchema { tableId = tableId' } ->
+                                        tableId == tableId'
+                                )
+                                (state ^. tableSchemas_)
+                of
+                        (Just tableSchema) -> do
+                                putCatalogState state
+                                return $ Just tableSchema
+                        _ -> do
+                                tableSchema <- buildTableSchema tableId
+                                case tableSchema of
+                                        Nothing            -> return Nothing
+                                        (Just tableSchema) -> do
+                                                let
+                                                        newState = over
+                                                                tableSchemas_
+                                                                (tableSchema :)
+                                                                state
+                                                putCatalogState newState
+                                                return $ Just tableSchema
 
 lookupTableIdByName :: (StorageBackend m) => String -> Kyuu m (Maybe OID)
 lookupTableIdByName name = do
@@ -102,7 +130,7 @@ createTableWithCatalog (TableSchema _ tableName tableCols) = do
 
 openTable :: (StorageBackend m) => OID -> Kyuu m (Maybe (Table m))
 openTable tableId = do
-        schema <- lookupTableById tableId
+        schema <- getTableById tableId
 
         case schema of
                 Nothing       -> return Nothing
@@ -161,7 +189,8 @@ bootstrapCatalog = do
                         , pgAttributeTableSchema
                         , pgIndexTableSchema
                         ]
-                systemIndexes = [classOidIndexSchema]
+                systemIndexes =
+                        [classOidIndexSchema, attributeRelIdColNumIndexSchema]
 
         forM_ systemTables $ \schema ->
                 modifyCatalogState $ over tableSchemas_ (schema :)
@@ -185,10 +214,12 @@ createSystemTablesAndIndexes tables indexes = do
         forM_ indexes $ \(IndexSchema indexId _ _) ->
                 S.createIndex catalogDatabaseId indexId
 
-        pgClassTable     <- fromJust <$> openTable pgClassTableId
-        pgAttributeTable <- fromJust <$> openTable pgAttributeTableId
-        pgIndexTable     <- fromJust <$> openTable pgIndexTableId
-        classOidIndex    <- fromJust <$> openIndex classOidIndexId
+        pgClassTable              <- fromJust <$> openTable pgClassTableId
+        pgAttributeTable          <- fromJust <$> openTable pgAttributeTableId
+        pgIndexTable              <- fromJust <$> openTable pgIndexTableId
+        classOidIndex             <- fromJust <$> openIndex classOidIndexId
+        attributeRelIdColNumIndex <- fromJust
+                <$> openIndex attributeRelIdColNumIndexId
 
         forM_ tables $ \(TableSchema tableId tableName tableCols) -> do
                 let tuple = Tuple [] [VInt tableId, VString tableName]
@@ -196,18 +227,21 @@ createSystemTablesAndIndexes tables indexes = do
                 insertIndex classOidIndex (Tuple [] [VInt tableId]) slot
 
                 forM_ tableCols $ \(ColumnSchema _ colId colName colType) -> do
-                        let
-                                tuple = Tuple
-                                        []
-                                        [ VInt tableId
-                                        , VString colName
-                                        , VInt colId
-                                        ]
-                        insertTuple pgAttributeTable tuple
+                        let tuple = Tuple
+                                    []
+                                    [ VInt tableId
+                                    , VString colName
+                                    , VInt (fromEnum colType)
+                                    , VInt colId
+                                    ]
+                        slot <- insertTuple pgAttributeTable tuple
+                        insertIndex
+                                attributeRelIdColNumIndex
+                                (Tuple [] [VInt tableId, VInt colId])
+                                slot
 
         forM_ indexes $ \(IndexSchema indexId indexTableId colNums) -> do
                 let tuple = Tuple
-
                             []
                             [ VInt indexId
                             , VInt indexTableId
@@ -232,3 +266,110 @@ scanRelation relId = do
         closeIndexScanIterator si
 
         return tuple
+
+buildTableSchema :: (StorageBackend m) => OID -> Kyuu m (Maybe TableSchema)
+buildTableSchema tableId = do
+        tuple <- scanRelation tableId
+
+        case tuple of
+                Nothing      -> return Nothing
+                (Just tuple) -> do
+                        relId <- evalExpr
+                                (ColumnRefExpr pgClassTableId classOidColNum)
+                                tuple
+                        relName <- evalExpr
+                                (ColumnRefExpr pgClassTableId classNameColNum)
+                                tuple
+
+                        case (relId, relName) of
+                                (VInt relId, VString relName) -> do
+                                        columns <- buildTableColumns tableId
+                                        return $ Just $ TableSchema
+                                                relId
+                                                relName
+                                                columns
+                                _ ->
+                                        lerror
+                                                (DataCorrupted
+                                                        "invalid type of class tuple"
+                                                )
+
+
+
+buildTableColumns :: (StorageBackend m) => OID -> Kyuu m [ColumnSchema]
+buildTableColumns tableId = do
+        pgAttributeTable          <- fromJust <$> openTable pgAttributeTableId
+        attributeRelIdColNumIndex <- fromJust
+                <$> openIndex attributeRelIdColNumIndexId
+
+        si <- beginIndexScan attributeRelIdColNumIndex pgAttributeTable
+        si <- rescanIndex
+                si
+                [ ScanKey attributeRelIdColNum  SEqual   (VInt tableId)
+                , ScanKey attributeColNumColNum SGreater (VInt 0)
+                ]
+                Forward
+
+        (si, cols) <- collectColumns si
+        si         <- endIndexScan si
+        closeIndexScanIterator si
+
+        return cols
+    where
+        collectColumns
+                :: (StorageBackend m)
+                => IndexScanIterator m
+                -> Kyuu m (IndexScanIterator m, [ColumnSchema])
+        collectColumns si = do
+                (si, tuple) <- indexScanNext si Forward
+
+                case tuple of
+                        Nothing      -> return (si, [])
+                        (Just tuple) -> do
+                                relId <- evalExpr
+                                        (ColumnRefExpr
+                                                pgAttributeTableId
+                                                attributeRelIdColNum
+                                        )
+                                        tuple
+                                colName <- evalExpr
+                                        (ColumnRefExpr
+                                                pgAttributeTableId
+                                                attributeNameColNum
+                                        )
+                                        tuple
+                                colType <- evalExpr
+                                        (ColumnRefExpr
+                                                pgAttributeTableId
+                                                attributeTypeColNum
+                                        )
+                                        tuple
+                                colNum <- evalExpr
+                                        (ColumnRefExpr
+                                                pgAttributeTableId
+                                                attributeColNumColNum
+                                        )
+                                        tuple
+
+                                case (relId, colName, colType, colNum) of
+                                        (VInt relId, VString colName, VInt colType, VInt colNum)
+                                                -> do
+                                                        (si, rest) <-
+                                                                collectColumns
+                                                                        si
+                                                        return
+                                                                ( si
+                                                                , ColumnSchema
+                                                                                relId
+                                                                                colNum
+                                                                                colName
+                                                                                (toEnum
+                                                                                        colType
+                                                                                )
+                                                                        : rest
+                                                                )
+                                        _ ->
+                                                lerror
+                                                        (DataCorrupted
+                                                                "invalid type of attribute tuple"
+                                                        )

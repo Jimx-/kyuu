@@ -2,12 +2,19 @@ module Kyuu.Catalog.Tables
         ( pgClassTableId
         , pgClassTableSchema
         , classOidColNum
+        , classNameColNum
         , pgAttributeTableId
         , pgAttributeTableSchema
+        , attributeRelIdColNum
+        , attributeNameColNum
+        , attributeTypeColNum
+        , attributeColNumColNum
         , pgIndexTableId
         , pgIndexTableSchema
         , classOidIndexId
         , classOidIndexSchema
+        , attributeRelIdColNumIndexId
+        , attributeRelIdColNumIndexSchema
         )
 where
 
@@ -38,6 +45,8 @@ pgClassTableSchema = defineTable pgClassTableId
                                  "pg_class"
                                  [_c "oid" SInt, _c "relname" SString]
 
+classOidColNum :: Int
+classNameColNum :: Int
 classOidColNum = 1
 classNameColNum = 2
 
@@ -48,7 +57,20 @@ pgAttributeTableSchema :: TableSchema
 pgAttributeTableSchema = defineTable
         pgAttributeTableId
         "pg_attribute"
-        [_c "attrelid" SInt, _c "attname" SString, _c "attnum" SInt]
+        [ _c "attrelid" SInt
+        , _c "attname"  SString
+        , _c "atttypid" SInt
+        , _c "attnum"   SInt
+        ]
+
+attributeRelIdColNum :: Int
+attributeNameColNum :: Int
+attributeTypeColNum :: Int
+attributeColNumColNum :: Int
+attributeRelIdColNum = 1
+attributeNameColNum = 2
+attributeTypeColNum = 3
+attributeColNumColNum = 4
 
 pgIndexTableId :: OID
 pgIndexTableId = 3
@@ -70,3 +92,12 @@ classOidIndexId = 4
 classOidIndexSchema :: IndexSchema
 classOidIndexSchema =
         defineIndex classOidIndexId pgClassTableId [classOidColNum]
+
+attributeRelIdColNumIndexId :: OID
+attributeRelIdColNumIndexId = 5
+
+attributeRelIdColNumIndexSchema :: IndexSchema
+attributeRelIdColNumIndexSchema = defineIndex
+        attributeRelIdColNumIndexId
+        pgAttributeTableId
+        [attributeRelIdColNum, attributeColNumColNum]

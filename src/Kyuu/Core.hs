@@ -6,6 +6,8 @@ module Kyuu.Core
         , getKState
         , getCatalogState
         , modifyCatalogState
+        , takeCatalogState
+        , putCatalogState
         , lcatch
         , lerror
         , startTransaction
@@ -26,7 +28,7 @@ import           Kyuu.Storage.Backend          as X
                                                 ( StorageBackend )
 
 import           Control.Concurrent.STM
-import           Control.Concurrent.STM.TVar
+import           Control.Concurrent.STM.TMVar
 
 import           Control.Lens
 import           Control.Monad.Trans.State.Lazy
@@ -42,13 +44,14 @@ import           Control.Monad.Trans.Reader     ( ReaderT )
 import qualified Control.Monad.Trans.Reader    as R
 import           Control.Monad.Except
 import           Control.Monad.Trans.Class
+import           Control.Monad.Trans.Control
 
 import           Data.Map                       ( Map )
 import qualified Data.Map                      as Map
 
 type Transaction m = S.TransactionType m
 
-data KState m = KState { _catalogState :: TVar CatalogState
+data KState m = KState { _catalogState :: TMVar CatalogState
                        , _currentTxn :: Maybe (Transaction m)
                        , _checkpointRequestQueue :: TQueue () }
 
@@ -56,7 +59,7 @@ makeLensesWith (lensRules & lensField .~ lensGen) ''KState
 
 type Kyuu m = ReaderT Config (StateT (KState m) (ExceptT Err m))
 
-initKyuuState :: TVar CatalogState -> TQueue () -> KState m
+initKyuuState :: TMVar CatalogState -> TQueue () -> KState m
 initKyuuState mcs = KState mcs Nothing
 
 getKState :: (StorageBackend m) => Kyuu m (KState m)
@@ -65,13 +68,25 @@ getKState = get
 getCatalogState :: (StorageBackend m) => Kyuu m CatalogState
 getCatalogState = do
         m <- (^. catalogState_) <$> get
-        liftIO $ readTVarIO m
+        liftIO $ atomically $ readTMVar m
 
 modifyCatalogState
         :: (StorageBackend m) => (CatalogState -> CatalogState) -> Kyuu m ()
 modifyCatalogState f = do
+        m     <- (^. catalogState_) <$> get
+        state <- liftIO $ atomically $ takeTMVar m
+        liftIO $ atomically $ putTMVar m (f state)
+
+takeCatalogState :: (StorageBackend m) => Kyuu m CatalogState
+takeCatalogState = do
         m <- (^. catalogState_) <$> get
-        liftIO $ atomically $ modifyTVar m f
+        liftIO $ atomically $ takeTMVar m
+
+putCatalogState :: (StorageBackend m) => CatalogState -> Kyuu m ()
+putCatalogState state = do
+        m <- (^. catalogState_) <$> get
+        liftIO $ atomically $ putTMVar m state
+
 
 lcatch :: (StorageBackend m) => Kyuu m a -> (Err -> Kyuu m a) -> Kyuu m a
 lcatch = R.liftCatch $ ST.liftCatch catchE
