@@ -14,6 +14,7 @@ data SchemaType = SNull
                 | SFloat
                 | SDouble
                 | SString
+                | SIntList
                 deriving (Eq, Show)
 
 data ColumnSchema = ColumnSchema { colTable :: OID
@@ -29,6 +30,6 @@ data TableSchema = TableSchema { tableId :: OID
 
 data IndexSchema = IndexSchema { indexId :: OID
                                , indexTableId :: OID
-                               , numAttrs :: Int
+                               , colNums :: [Int]
                                }
                  deriving (Eq, Show)

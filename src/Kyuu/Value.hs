@@ -7,7 +7,7 @@ module Kyuu.Value
         , sortTuple
         , encodeTuple
         , decodeTuple
-        , decodeTupleValues
+        , decodeTupleWithDesc
         )
 where
 
@@ -27,15 +27,17 @@ data Value = VNull
            | VInt Int
            | VDouble Double
            | VString String
+           | VIntList [Int]
            deriving (Eq, Generic, Typeable)
 instance Store Value
 
 instance Show Value where
-        show VNull       = "(null)"
-        show (VBool   b) = show b
-        show (VInt    i) = show i
-        show (VDouble d) = show d
-        show (VString s) = "\"" ++ s ++ "\""
+        show VNull        = "(null)"
+        show (VBool    b) = show b
+        show (VInt     i) = show i
+        show (VDouble  d) = show d
+        show (VString  s) = "\"" ++ s ++ "\""
+        show (VIntList l) = show l
 
 data ColumnDesc = ColumnDesc OID OID
                 deriving (Eq, Show)
@@ -65,14 +67,19 @@ encodeTuple (Tuple _ vals) = encode vals
 
 decodeTuple :: B.ByteString -> TableSchema -> Maybe Tuple
 decodeTuple buf TableSchema { tableCols } = case decodeTupleValues buf of
-        (Just (Tuple [] vs)) -> Just $ Tuple tupleDesc vs
-        _                    -> Nothing
+        (Just vs) -> Just $ Tuple tupleDesc vs
+        _         -> Nothing
     where
         tupleDesc = map
                 (\ColumnSchema { colTable, colId } -> ColumnDesc colTable colId)
                 tableCols
 
-decodeTupleValues :: B.ByteString -> Maybe Tuple
+decodeTupleWithDesc :: B.ByteString -> TupleDesc -> Maybe Tuple
+decodeTupleWithDesc buf tupleDesc = case decodeTupleValues buf of
+        (Just vs) -> Just $ Tuple tupleDesc vs
+        _         -> Nothing
+
+decodeTupleValues :: B.ByteString -> Maybe [Value]
 decodeTupleValues buf = case decode buf of
-        (Right vals) -> Just $ Tuple [] vals
+        (Right vals) -> Just vals
         _            -> Nothing

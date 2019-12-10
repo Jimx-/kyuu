@@ -205,11 +205,30 @@ createSystemTablesAndIndexes tables indexes = do
                                         ]
                         insertTuple pgAttributeTable tuple
 
-        forM_ indexes $ \(IndexSchema indexId indexTableId numAttrs) -> do
-                let
-                        tuple = Tuple
-                                []
-                                [VInt indexId, VInt indexTableId, VInt numAttrs]
+        forM_ indexes $ \(IndexSchema indexId indexTableId colNums) -> do
+                let tuple = Tuple
+
+                            []
+                            [ VInt indexId
+                            , VInt indexTableId
+                            , VInt (length colNums)
+                            , VIntList colNums
+                            ]
                 insertTuple pgIndexTable tuple
 
         finishTransaction
+
+scanRelation :: (StorageBackend m) => OID -> Kyuu m (Maybe Tuple)
+scanRelation relId = do
+        pgClassTable  <- fromJust <$> openTable pgClassTableId
+        classOidIndex <- fromJust <$> openIndex classOidIndexId
+
+        si            <- beginIndexScan classOidIndex pgClassTable
+        si <- rescanIndex si
+                          [ScanKey classOidColNum SEqual (VInt relId)]
+                          Forward
+        (si, tuple) <- indexScanNext si Forward
+        si          <- endIndexScan si
+        closeIndexScanIterator si
+
+        return tuple

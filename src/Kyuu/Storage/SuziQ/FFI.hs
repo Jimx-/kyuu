@@ -6,7 +6,7 @@ module Kyuu.Storage.SuziQ.FFI
         , SqTuple
         , SqTupleSlot
         , SqIndex
-        , SqIndexScanIterator
+        , SqIndexScanIterator(..)
         , SqTransaction
         , sq_init
         , sq_last_error_length
@@ -35,6 +35,12 @@ module Kyuu.Storage.SuziQ.FFI
         , sq_index_insert
         , RawIndexKeyComparatorFunc
         , sqWrapRawIndexKeyComparator
+        , sq_index_begin_scan
+        , sq_free_index_scan_iterator
+        , RawIndexScanPredicate
+        , sqWrapRawIndexScanPredicate
+        , sq_index_rescan
+        , sq_index_scan_next
         )
 where
 
@@ -67,7 +73,9 @@ type SqTableScanIterator = ForeignPtr TableScanIteratorPtr
 type SqTuple = ForeignPtr TuplePtr
 type SqTupleSlot = ForeignPtr TupleSlotPtr
 type SqIndex = ForeignPtr IndexPtr
-type SqIndexScanIterator = ForeignPtr IndexScanIteratorPtr
+data SqIndexScanIterator = SqIndexScanIterator { keyComp :: Maybe (FunPtr RawIndexKeyComparatorFunc)
+                                               , predicate :: Maybe (FunPtr RawIndexScanPredicate)
+                                               , iterator :: ForeignPtr IndexScanIteratorPtr }
 type SqTransaction = ForeignPtr TransactionPtr
 
 foreign import ccall unsafe "sq_init"
@@ -146,7 +154,24 @@ type RawIndexKeyComparatorFunc
         = Ptr CChar -> CInt -> Ptr CChar -> CInt -> IO CInt
 
 foreign import ccall "sq_index_insert"
-  sq_index_insert :: Ptr DBPtr -> Ptr IndexPtr -> Ptr CChar -> CInt -> FunPtr RawIndexKeyComparatorFunc -> Ptr TupleSlotPtr -> IO ()
+  sq_index_insert :: Ptr IndexPtr -> Ptr DBPtr -> Ptr CChar -> CInt -> FunPtr RawIndexKeyComparatorFunc -> Ptr TupleSlotPtr -> IO ()
 
 foreign import ccall "wrapper"
   sqWrapRawIndexKeyComparator :: RawIndexKeyComparatorFunc -> IO (FunPtr RawIndexKeyComparatorFunc)
+
+foreign import ccall "sq_index_begin_scan"
+  sq_index_begin_scan :: Ptr IndexPtr -> Ptr DBPtr -> Ptr TransactionPtr -> Ptr TablePtr -> FunPtr RawIndexKeyComparatorFunc -> IO (Ptr IndexScanIteratorPtr)
+
+foreign import ccall unsafe "&sq_free_index_scan_iterator"
+  sq_free_index_scan_iterator :: FunPtr (Ptr IndexScanIteratorPtr -> IO ())
+
+type RawIndexScanPredicate = Ptr CChar -> CInt -> IO CInt
+
+foreign import ccall "wrapper"
+  sqWrapRawIndexScanPredicate :: RawIndexScanPredicate -> IO (FunPtr RawIndexScanPredicate)
+
+foreign import ccall "sq_index_rescan"
+  sq_index_rescan :: Ptr IndexScanIteratorPtr -> Ptr DBPtr -> Ptr CChar -> CInt -> FunPtr RawIndexScanPredicate -> IO ()
+
+foreign import ccall "sq_index_scan_next"
+  sq_index_scan_next :: Ptr IndexScanIteratorPtr -> Ptr DBPtr -> CInt -> IO (Ptr TuplePtr)

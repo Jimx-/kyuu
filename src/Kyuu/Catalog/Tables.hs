@@ -1,6 +1,7 @@
 module Kyuu.Catalog.Tables
         ( pgClassTableId
         , pgClassTableSchema
+        , classOidColNum
         , pgAttributeTableId
         , pgAttributeTableSchema
         , pgIndexTableId
@@ -26,7 +27,7 @@ defineTable tId name cols = TableSchema tId name columns
                                 )
                         $ zip [1 ..] cols
 
-defineIndex :: OID -> OID -> Int -> IndexSchema
+defineIndex :: OID -> OID -> [Int] -> IndexSchema
 defineIndex = IndexSchema
 
 pgClassTableId :: OID
@@ -36,6 +37,9 @@ pgClassTableSchema :: TableSchema
 pgClassTableSchema = defineTable pgClassTableId
                                  "pg_class"
                                  [_c "oid" SInt, _c "relname" SString]
+
+classOidColNum = 1
+classNameColNum = 2
 
 pgAttributeTableId :: OID
 pgAttributeTableId = 2
@@ -53,11 +57,16 @@ pgIndexTableSchema :: TableSchema
 pgIndexTableSchema = defineTable
         pgIndexTableId
         "pg_index"
-        [_c "indexrelid" SInt, _c "indrelid" SInt, _c "indatts" SInt]
+        [ _c "indexrelid" SInt
+        , _c "indrelid"   SInt
+        , _c "indatts"    SInt
+        , _c "indkey"     SIntList
+        ]
 
 
 classOidIndexId :: OID
 classOidIndexId = 4
 
 classOidIndexSchema :: IndexSchema
-classOidIndexSchema = defineIndex classOidIndexId pgClassTableId 1
+classOidIndexSchema =
+        defineIndex classOidIndexId pgClassTableId [classOidColNum]

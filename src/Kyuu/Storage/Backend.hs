@@ -45,6 +45,12 @@ class (MonadBaseControl IO m, MonadIO m) => StorageBackend m where
     createCheckpoint :: m ()
     getNextOid :: m OID
     insertIndex :: IndexType m -> B.ByteString -> (B.ByteString -> B.ByteString -> Maybe Ordering) -> TupleSlotType m -> m ()
+    beginIndexScan :: TransactionType m -> IndexType m -> TableType m -> (B.ByteString -> B.ByteString -> Maybe Ordering) -> m (IndexScanIteratorType m)
+    rescanIndex :: IndexScanIteratorType m -> Maybe B.ByteString -> (B.ByteString -> Maybe Bool)-> m (IndexScanIteratorType m)
+    indexScanNext :: IndexScanIteratorType m -> ScanDirection -> m (IndexScanIteratorType m, Maybe (TupleType m))
+    endIndexScan :: IndexScanIteratorType m -> m (IndexScanIteratorType m)
+    closeIndexScanIterator :: IndexScanIteratorType m -> m ()
+
 
 instance StorageBackend m => StorageBackend (StateT s m) where
         type TableType (StateT s m) = TableType m
@@ -68,6 +74,13 @@ instance StorageBackend m => StorageBackend (StateT s m) where
         getNextOid       = lift getNextOid
         insertIndex index key keyComp tupleSlot =
                 lift $ insertIndex index key keyComp tupleSlot
+        beginIndexScan txn index table keyComp =
+                lift $ beginIndexScan txn index table keyComp
+        rescanIndex iterator startKey predicate =
+                lift $ rescanIndex iterator startKey predicate
+        endIndexScan = lift . endIndexScan
+        indexScanNext iterator dir = lift $ indexScanNext iterator dir
+        closeIndexScanIterator = lift . closeIndexScanIterator
 
 instance StorageBackend m => StorageBackend (ExceptT e m) where
         type TableType (ExceptT e m) = TableType m
@@ -91,7 +104,13 @@ instance StorageBackend m => StorageBackend (ExceptT e m) where
         getNextOid       = lift getNextOid
         insertIndex index key keyComp tupleSlot =
                 lift $ insertIndex index key keyComp tupleSlot
-
+        beginIndexScan txn index table keyComp =
+                lift $ beginIndexScan txn index table keyComp
+        rescanIndex iterator startKey predicate =
+                lift $ rescanIndex iterator startKey predicate
+        endIndexScan = lift . endIndexScan
+        indexScanNext iterator dir = lift $ indexScanNext iterator dir
+        closeIndexScanIterator = lift . closeIndexScanIterator
 
 instance StorageBackend m => StorageBackend (ReaderT r m) where
         type TableType (ReaderT r m) = TableType m
@@ -115,3 +134,10 @@ instance StorageBackend m => StorageBackend (ReaderT r m) where
         getNextOid       = lift getNextOid
         insertIndex index key keyComp tupleSlot =
                 lift $ insertIndex index key keyComp tupleSlot
+        beginIndexScan txn index table keyComp =
+                lift $ beginIndexScan txn index table keyComp
+        rescanIndex iterator startKey predicate =
+                lift $ rescanIndex iterator startKey predicate
+        endIndexScan = lift . endIndexScan
+        indexScanNext iterator dir = lift $ indexScanNext iterator dir
+        closeIndexScanIterator = lift . closeIndexScanIterator
