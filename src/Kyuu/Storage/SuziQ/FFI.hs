@@ -5,7 +5,7 @@ module Kyuu.Storage.SuziQ.FFI
         , SqTableScanIterator
         , SqTuple
         , SqTupleSlot
-        , SqIndex
+        , SqIndex(..)
         , SqIndexScanIterator(..)
         , SqTransaction
         , sq_init
@@ -72,9 +72,9 @@ type SqTable = ForeignPtr TablePtr
 type SqTableScanIterator = ForeignPtr TableScanIteratorPtr
 type SqTuple = ForeignPtr TuplePtr
 type SqTupleSlot = ForeignPtr TupleSlotPtr
-type SqIndex = ForeignPtr IndexPtr
-data SqIndexScanIterator = SqIndexScanIterator { keyComp :: Maybe (FunPtr RawIndexKeyComparatorFunc)
-                                               , predicate :: Maybe (FunPtr RawIndexScanPredicate)
+data SqIndex = SqIndex { keyComp:: Maybe (FunPtr RawIndexKeyComparatorFunc)
+                       , index :: ForeignPtr IndexPtr }
+data SqIndexScanIterator = SqIndexScanIterator { predicate :: Maybe (FunPtr RawIndexScanPredicate)
                                                , iterator :: ForeignPtr IndexScanIteratorPtr }
 type SqTransaction = ForeignPtr TransactionPtr
 
@@ -103,10 +103,10 @@ foreign import ccall unsafe "&sq_free_table"
   sq_free_table :: FunPtr (Ptr TablePtr -> IO ())
 
 foreign import ccall unsafe "sq_create_index"
-  sq_create_index :: Ptr DBPtr -> Int64 -> Int64 -> IO (Ptr IndexPtr)
+  sq_create_index :: Ptr DBPtr -> Int64 -> Int64 -> FunPtr RawIndexKeyComparatorFunc -> IO (Ptr IndexPtr)
 
 foreign import ccall unsafe "sq_open_index"
-  sq_open_index :: Ptr DBPtr -> Int64 -> Int64 -> IO (Ptr IndexPtr)
+  sq_open_index :: Ptr DBPtr -> Int64 -> Int64 -> FunPtr RawIndexKeyComparatorFunc  -> IO (Ptr IndexPtr)
 
 foreign import ccall unsafe "&sq_free_index"
   sq_free_index :: FunPtr (Ptr IndexPtr -> IO ())
@@ -154,13 +154,13 @@ type RawIndexKeyComparatorFunc
         = Ptr CChar -> CInt -> Ptr CChar -> CInt -> IO CInt
 
 foreign import ccall "sq_index_insert"
-  sq_index_insert :: Ptr IndexPtr -> Ptr DBPtr -> Ptr CChar -> CInt -> FunPtr RawIndexKeyComparatorFunc -> Ptr TupleSlotPtr -> IO ()
+  sq_index_insert :: Ptr IndexPtr -> Ptr DBPtr -> Ptr CChar -> CInt -> Ptr TupleSlotPtr -> IO ()
 
 foreign import ccall "wrapper"
   sqWrapRawIndexKeyComparator :: RawIndexKeyComparatorFunc -> IO (FunPtr RawIndexKeyComparatorFunc)
 
 foreign import ccall "sq_index_begin_scan"
-  sq_index_begin_scan :: Ptr IndexPtr -> Ptr DBPtr -> Ptr TransactionPtr -> Ptr TablePtr -> FunPtr RawIndexKeyComparatorFunc -> IO (Ptr IndexScanIteratorPtr)
+  sq_index_begin_scan :: Ptr IndexPtr -> Ptr DBPtr -> Ptr TransactionPtr -> Ptr TablePtr -> IO (Ptr IndexScanIteratorPtr)
 
 foreign import ccall unsafe "&sq_free_index_scan_iterator"
   sq_free_index_scan_iterator :: FunPtr (Ptr IndexScanIteratorPtr -> IO ())

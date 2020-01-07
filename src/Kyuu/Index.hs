@@ -9,7 +9,6 @@ module Kyuu.Index
         , rescanIndex
         , indexScanNext
         , endIndexScan
-        , closeIndexScanIterator
         , module X
         )
 where
@@ -50,13 +49,6 @@ getExprOperator SEqual   = BEqual
 getExprOperator SLess    = BLessThan
 getExprOperator SGreater = BGreaterThan
 
-keyComparator :: B.ByteString -> B.ByteString -> Maybe Ordering
-keyComparator a b = case decodeTupleWithDesc a [] of
-        Nothing       -> Nothing
-        (Just aTuple) -> case decodeTupleWithDesc b [] of
-                Nothing       -> Nothing
-                (Just bTuple) -> Just $ compareTuple aTuple bTuple
-
 getIndexScanPredicate :: TupleDesc -> [ScanKey] -> B.ByteString -> Maybe Bool
 getIndexScanPredicate tupleDesc scanKeys buf =
         case decodeTupleWithDesc buf tupleDesc of
@@ -81,7 +73,7 @@ insertIndex
         :: (StorageBackend m) => Index m -> Tuple -> TupleSlot m -> Kyuu m ()
 insertIndex Index { indexStorage } key tupleSlot = do
         let keyBuf = encodeTuple key
-        S.insertIndex indexStorage keyBuf keyComparator tupleSlot
+        S.insertIndex indexStorage keyBuf tupleSlot
 
 beginIndexScan
         :: (StorageBackend m)
@@ -90,7 +82,7 @@ beginIndexScan
         -> Kyuu m (IndexScanIterator m)
 beginIndexScan index@Index { indexStorage } table@Table { tableStorage } = do
         txn      <- getCurrentTransaction
-        iterator <- S.beginIndexScan txn indexStorage tableStorage keyComparator
+        iterator <- S.beginIndexScan txn indexStorage tableStorage
         return $ IndexScanIterator index table iterator
 
 rescanIndex
@@ -163,7 +155,3 @@ endIndexScan
 endIndexScan IndexScanIterator { index, table, iterator } = do
         newIt <- S.endIndexScan iterator
         return $ IndexScanIterator index table newIt
-
-closeIndexScanIterator :: (StorageBackend m) => IndexScanIterator m -> Kyuu m ()
-closeIndexScanIterator IndexScanIterator { iterator } =
-        S.closeIndexScanIterator iterator

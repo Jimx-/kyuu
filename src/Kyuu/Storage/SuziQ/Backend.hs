@@ -48,13 +48,13 @@ instance StorageBackend SuziQ where
                 db <- getDB
                 sqOpenTable db dbId tableId
 
-        createIndex dbId indexId = do
+        createIndex dbId indexId keyComp = do
                 db <- getDB
-                sqCreateIndex db dbId indexId
+                sqCreateIndex db dbId indexId keyComp
 
-        openIndex dbId indexId = do
+        openIndex dbId indexId keyComp = do
                 db <- getDB
-                sqOpenIndex db dbId indexId
+                sqOpenIndex db dbId indexId keyComp
 
         startTransaction isolationLevel = do
                 db <- getDB
@@ -87,13 +87,13 @@ instance StorageBackend SuziQ where
                 db <- getDB
                 sqGetNextOid db
 
-        insertIndex index key keyComp tupleSlot = do
+        insertIndex index key tupleSlot = do
                 db <- getDB
-                sqInsertIndex db index key keyComp tupleSlot
+                sqInsertIndex db index key tupleSlot
 
-        beginIndexScan txn index table keyComp = do
+        beginIndexScan txn index table = do
                 db <- getDB
-                sqBeginIndexScan index db txn table keyComp
+                sqBeginIndexScan index db txn table
 
         rescanIndex iterator startKey predicate = do
                 db <- getDB
@@ -104,21 +104,17 @@ instance StorageBackend SuziQ where
                 tuple <- sqIndexScanNext iterator db dir
                 return (iterator, tuple)
 
-        endIndexScan si@(SqIndexScanIterator keyComp predicate iterator) =
+        endIndexScan si@(SqIndexScanIterator predicate iterator) =
                 case predicate of
                         (Just predicate) -> do
                                 liftIO $ freeHaskellFunPtr predicate
-                                return
-                                        (SqIndexScanIterator keyComp
-                                                             Nothing
-                                                             iterator
-                                        )
+                                return (SqIndexScanIterator Nothing iterator)
                         _ -> return si
 
-        closeIndexScanIterator (SqIndexScanIterator keyComp _ _) =
-                case keyComp of
-                        (Just keyComp) -> liftIO $ freeHaskellFunPtr keyComp
-                        _              -> return ()
+        closeIndex (SqIndex keyComp _) = case keyComp of
+                (Just keyComp) -> liftIO $ freeHaskellFunPtr keyComp
+                _              -> return ()
+
 
 sqInit :: IO ()
 sqInit = sq_init
@@ -195,30 +191,52 @@ sqOpenTable db dbId tableId = control $ \runInBase ->
                                         (Just err) -> lerror err
                                         _          -> return Nothing
 
-sqCreateIndex :: SqDB -> OID -> OID -> SuziQ SqIndex
-sqCreateIndex db dbId indexId = control $ \runInBase ->
+sqCreateIndex
+        :: SqDB
+        -> OID
+        -> OID
+        -> (B.ByteString -> B.ByteString -> Maybe Ordering)
+        -> SuziQ SqIndex
+sqCreateIndex db dbId indexId keyComp = control $ \runInBase ->
         withForeignPtr db $ \database -> do
+                keyCompFunc <- sqWrapRawIndexKeyComparator
+                        $ getIndexKeyComparator keyComp
                 ptr <- sq_create_index database
                                        (fromIntegral dbId)
                                        (fromIntegral indexId)
+                                       keyCompFunc
                 runInBase $ if ptr /= nullPtr
-                        then liftIO $ newForeignPtr sq_free_index ptr
+                        then do
+                                foreignPtr <- liftIO
+                                        $ newForeignPtr sq_free_index ptr
+                                return $ SqIndex (Just keyCompFunc) foreignPtr
                         else do
                                 err <- lastError
                                 lerror err
 
 
-sqOpenIndex :: SqDB -> OID -> OID -> SuziQ (Maybe SqIndex)
-sqOpenIndex db dbId indexId = control $ \runInBase ->
+sqOpenIndex
+        :: SqDB
+        -> OID
+        -> OID
+        -> (B.ByteString -> B.ByteString -> Maybe Ordering)
+        -> SuziQ (Maybe SqIndex)
+sqOpenIndex db dbId indexId keyComp = control $ \runInBase ->
         withForeignPtr db $ \database -> do
+                keyCompFunc <- sqWrapRawIndexKeyComparator
+                        $ getIndexKeyComparator keyComp
                 ptr <- sq_open_index database
                                      (fromIntegral dbId)
                                      (fromIntegral indexId)
+                                     keyCompFunc
+
                 runInBase $ if ptr /= nullPtr
                         then do
                                 foreignPtr <- liftIO
                                         $ newForeignPtr sq_free_index ptr
-                                return $ Just foreignPtr
+                                return $ Just $ SqIndex
+                                        (Just keyCompFunc)
+                                        foreignPtr
                         else do
                                 err <- tryGetLastError
                                 case err of
@@ -374,26 +392,16 @@ getIndexKeyComparator f aPtr aLen bPtr bLen = do
                 _          -> return 2
 
 
-sqInsertIndex
-        :: SqDB
-        -> SqIndex
-        -> B.ByteString
-        -> (B.ByteString -> B.ByteString -> Maybe Ordering)
-        -> SqTupleSlot
-        -> SuziQ ()
-sqInsertIndex db index key keyComp slot = control $ \runInBase ->
-        withForeignPtr db $ \database -> withForeignPtr index $ \index ->
+sqInsertIndex :: SqDB -> SqIndex -> B.ByteString -> SqTupleSlot -> SuziQ ()
+sqInsertIndex db (SqIndex _ indexPtr) key slot = control $ \runInBase ->
+        withForeignPtr db $ \database -> withForeignPtr indexPtr $ \indexPtr ->
                 withForeignPtr slot $ \slot ->
                         B.useAsCStringLen key $ \(keyPtr, keyLen) -> do
-                                keyCompFunc <- sqWrapRawIndexKeyComparator
-                                        $ getIndexKeyComparator keyComp
-                                sq_index_insert index
+                                sq_index_insert indexPtr
                                                 database
                                                 keyPtr
                                                 (fromIntegral keyLen)
-                                                keyCompFunc
                                                 slot
-                                freeHaskellFunPtr keyCompFunc
                                 err <- tryGetLastError
                                 runInBase $ case err of
                                         Nothing    -> return ()
@@ -404,33 +412,32 @@ sqBeginIndexScan
         -> SqDB
         -> SqTransaction
         -> SqTable
-        -> (B.ByteString -> B.ByteString -> Maybe Ordering)
         -> SuziQ SqIndexScanIterator
-sqBeginIndexScan index db txn table keyComp = control $ \runInBase ->
+sqBeginIndexScan (SqIndex _ indexPtr) db txn table = control $ \runInBase ->
         withForeignPtr db $ \database ->
-                withForeignPtr index $ \index -> withForeignPtr txn $ \txn ->
-                        withForeignPtr table $ \table -> do
-                                keyCompFunc <- sqWrapRawIndexKeyComparator
-                                        $ getIndexKeyComparator keyComp
-                                ptr <- sq_index_begin_scan index
-                                                           database
-                                                           txn
-                                                           table
-                                                           keyCompFunc
+                withForeignPtr indexPtr
+                        $ \indexPtr -> withForeignPtr txn $ \txn ->
+                                  withForeignPtr table $ \table -> do
+                                          ptr <- sq_index_begin_scan
+                                                  indexPtr
+                                                  database
+                                                  txn
+                                                  table
 
-                                runInBase $ if ptr /= nullPtr
-                                        then do
-                                                foreignPtr <-
-                                                        liftIO $ newForeignPtr
-                                                                sq_free_index_scan_iterator
-                                                                ptr
-                                                return $ SqIndexScanIterator
-                                                        (Just keyCompFunc)
-                                                        Nothing
-                                                        foreignPtr
-                                        else do
-                                                err <- lastError
-                                                lerror err
+                                          runInBase $ if ptr /= nullPtr
+                                                  then do
+                                                          foreignPtr <-
+                                                                  liftIO
+                                                                          $ newForeignPtr
+                                                                                    sq_free_index_scan_iterator
+                                                                                    ptr
+                                                          return
+                                                                  $ SqIndexScanIterator
+                                                                            Nothing
+                                                                            foreignPtr
+                                                  else do
+                                                          err <- lastError
+                                                          lerror err
 
 
 getIndexScanPredicate :: (B.ByteString -> Maybe Bool) -> RawIndexScanPredicate
@@ -448,8 +455,8 @@ sqRescanIndex
         -> Maybe B.ByteString
         -> (B.ByteString -> Maybe Bool)
         -> SuziQ SqIndexScanIterator
-sqRescanIndex db (SqIndexScanIterator keyComp oldPred iteratorPtr) startKey predicate
-        = control $ \runInBase -> withForeignPtr db $ \database ->
+sqRescanIndex db (SqIndexScanIterator oldPred iteratorPtr) startKey predicate =
+        control $ \runInBase -> withForeignPtr db $ \database ->
                 withForeignPtr iteratorPtr $ \iterator -> do
                         case oldPred of
                                 (Just oldPred) -> freeHaskellFunPtr oldPred
@@ -481,7 +488,6 @@ sqRescanIndex db (SqIndexScanIterator keyComp oldPred iteratorPtr) startKey pred
                                 Nothing ->
                                         return
                                                 (SqIndexScanIterator
-                                                        keyComp
                                                         (Just predicateFunc)
                                                         iteratorPtr
                                                 )
@@ -490,7 +496,7 @@ sqRescanIndex db (SqIndexScanIterator keyComp oldPred iteratorPtr) startKey pred
 
 sqIndexScanNext
         :: SqIndexScanIterator -> SqDB -> ScanDirection -> SuziQ (Maybe SqTuple)
-sqIndexScanNext (SqIndexScanIterator keyComp predicate iteratorPtr) db dir =
+sqIndexScanNext (SqIndexScanIterator predicate iteratorPtr) db dir =
         control $ \runInBase -> withForeignPtr db $ \database ->
                 withForeignPtr iteratorPtr $ \iterator -> do
                         ptr <- sq_index_scan_next

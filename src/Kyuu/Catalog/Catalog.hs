@@ -28,6 +28,7 @@ import qualified Kyuu.Storage.Backend          as S
 
 import           Control.Lens            hiding ( Index )
 
+import qualified Data.ByteString               as B
 import           Data.List                      ( find )
 import           Data.Maybe                     ( fromJust )
 import           Data.Map                       ( Map )
@@ -158,6 +159,13 @@ lookupIndexById indId = do
         return $ find (\IndexSchema { indexId } -> indexId == indId)
                       (state ^. indexSchemas_)
 
+keyComparator :: B.ByteString -> B.ByteString -> Maybe Ordering
+keyComparator a b = case decodeTupleWithDesc a [] of
+        Nothing       -> Nothing
+        (Just aTuple) -> case decodeTupleWithDesc b [] of
+                Nothing       -> Nothing
+                (Just bTuple) -> Just $ compareTuple aTuple bTuple
+
 openIndex :: (StorageBackend m) => OID -> Kyuu m (Maybe (Index m))
 openIndex indexId = do
         schema <- lookupIndexById indexId
@@ -165,7 +173,7 @@ openIndex indexId = do
         case schema of
                 Nothing       -> return Nothing
                 (Just schema) -> do
-                        storage <- S.openIndex 1 indexId
+                        storage <- S.openIndex 1 indexId keyComparator
                         case storage of
                                 (Just storage) ->
                                         return
@@ -212,7 +220,7 @@ createSystemTablesAndIndexes tables indexes = do
                 S.createTable catalogDatabaseId tableId
 
         forM_ indexes $ \(IndexSchema indexId _ _) ->
-                S.createIndex catalogDatabaseId indexId
+                S.createIndex catalogDatabaseId indexId keyComparator
 
         pgClassTable              <- fromJust <$> openTable pgClassTableId
         pgAttributeTable          <- fromJust <$> openTable pgAttributeTableId
@@ -263,7 +271,6 @@ scanRelation relId = do
                           Forward
         (si, tuple) <- indexScanNext si Forward
         si          <- endIndexScan si
-        closeIndexScanIterator si
 
         return tuple
 
@@ -312,7 +319,6 @@ buildTableColumns tableId = do
 
         (si, cols) <- collectColumns si
         si         <- endIndexScan si
-        closeIndexScanIterator si
 
         return cols
     where
