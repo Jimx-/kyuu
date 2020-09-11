@@ -1,10 +1,10 @@
 module Kyuu.Storage.SuziQ.Error
-        ( SqErr(..)
-        )
+  ( SqErr (..),
+  )
 where
 
 newtype SqErr = Msg String
-         deriving (Eq, Ord)
+  deriving (Eq, Ord)
 
 instance Show SqErr where
-        show (Msg s) = s
+  show (Msg s) = s

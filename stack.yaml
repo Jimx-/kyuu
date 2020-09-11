@@ -17,7 +17,7 @@
 #
 # resolver: ./custom-snapshot.yaml
 # resolver: https://example.com/snapshots/2018-01-01.yaml
-resolver: lts-14.13
+resolver: lts-16.13
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -41,6 +41,9 @@ packages:
 #
 extra-deps:
 - simple-sql-parser-0.6.0@sha256:ce8f602fa81001287deb25af7b711fc45e1cdf36ff7702edde5dee2358f19a37,5580
+- store-0.7.7
+- store-core-0.4.4.3
+- th-utilities-0.2.4.0
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
