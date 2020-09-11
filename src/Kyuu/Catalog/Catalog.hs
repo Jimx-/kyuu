@@ -68,11 +68,22 @@ getTableById tableId = do
 lookupTableIdByName :: (StorageBackend m) => String -> Kyuu m (Maybe OID)
 lookupTableIdByName name = do
   state <- getCatalogState
-  let schema =
-        find
-          (\TableSchema {tableName = tableName} -> tableName == name)
-          (state ^. tableSchemas_)
-  return $ fmap (\TableSchema {tableId} -> tableId) schema
+
+  case find
+    (\TableSchema {tableName = tableName} -> tableName == name)
+    (state ^. tableSchemas_) of
+    (Just TableSchema {tableId}) -> return $ Just tableId
+    _ -> do
+      tuple <- scanRelationByName name
+      case tuple of
+        Nothing -> return Nothing
+        (Just tuple) -> do
+          relId <- evalExpr (ColumnRefExpr pgClassTableId classOidColNum) tuple
+
+          case relId of
+            (VInt relId) -> do
+              return $ Just relId
+            _ -> lerror (DataCorrupted "invalid type of class tuple")
 
 getTableColumns :: (StorageBackend m) => OID -> Kyuu m [ColumnSchema]
 getTableColumns tId = do
@@ -108,21 +119,30 @@ lookupTableColumnByName tId name = do
 createTableWithCatalog :: (StorageBackend m) => TableSchema -> Kyuu m (Table m)
 createTableWithCatalog (TableSchema _ tableName tableCols) = do
   exists <- lookupTableIdByName tableName
+
   case exists of
     Just _ -> lerror (TableExists tableName)
     Nothing -> do
       state <- getCatalogState
-      let tableId = 1 + length (state ^. tableSchemas_)
-          schema =
+      tableId <- getNextOid
+      let schema =
             TableSchema
               tableId
               tableName
               (map (\x -> x {colTable = tableId}) tableCols)
       modifyCatalogState $ over tableSchemas_ (schema :)
-      storage <- S.createTable 0 tableId
-      let table = Table tableId schema storage
+      storage <- S.createTable 1 tableId
 
-      return table
+      addNewRelationTuple schema
+
+      return $ Table tableId schema storage
+
+addNewRelationTuple :: (StorageBackend m) => TableSchema -> Kyuu m ()
+addNewRelationTuple (TableSchema tableId tableName _) = do
+  pgClassTable <- fromJust <$> openTable pgClassTableId
+  let tupleDesc = map (\ColumnSchema {colTable, colId} -> ColumnDesc colTable colId) (tableCols pgClassTableSchema)
+      tuple = Tuple tupleDesc [VInt tableId, VString tableName]
+  catalogInsertTuple pgClassTable tuple
 
 openTable :: (StorageBackend m) => OID -> Kyuu m (Maybe (Table m))
 openTable tableId = do
@@ -167,11 +187,28 @@ openIndex indexId = do
           lerror $
             InvalidState ("storage not created for index " ++ show indexId)
 
+openIndexes :: (StorageBackend m) => Table m -> Kyuu m [Index m]
+openIndexes table = do
+  indexOids <- getTableIndexList table
+  forM indexOids $ \indexId -> do
+    index <- openIndex indexId
+    case index of
+      Nothing -> lerror $ IndexNotFound indexId
+      (Just index) -> return index
+
 bootstrapCatalog :: (StorageBackend m) => Kyuu m ()
 bootstrapCatalog = do
   let systemTables =
-        [pgClassTableSchema, pgAttributeTableSchema, pgIndexTableSchema]
-      systemIndexes = [classOidIndexSchema, attributeRelIdColNumIndexSchema]
+        [ pgClassTableSchema,
+          pgAttributeTableSchema,
+          pgIndexTableSchema
+        ]
+      systemIndexes =
+        [ classOidIndexSchema,
+          classNameIndexSchema,
+          attributeRelIdColNumIndexSchema,
+          indexIndRelIdIndexSchema
+        ]
 
   forM_ systemTables $
     \schema -> modifyCatalogState $ over tableSchemas_ (schema :)
@@ -199,14 +236,17 @@ createSystemTablesAndIndexes tables indexes = do
   pgAttributeTable <- fromJust <$> openTable pgAttributeTableId
   pgIndexTable <- fromJust <$> openTable pgIndexTableId
   classOidIndex <- fromJust <$> openIndex classOidIndexId
+  classNameIndex <- fromJust <$> openIndex classNameIndexId
   attributeRelIdColNumIndex <-
     fromJust
       <$> openIndex attributeRelIdColNumIndexId
+  indexIndRelIdIndex <- fromJust <$> openIndex indexIndRelIdIndexId
 
   forM_ tables $ \(TableSchema tableId tableName tableCols) -> do
     let tuple = Tuple [] [VInt tableId, VString tableName]
     slot <- insertTuple pgClassTable tuple
     insertIndex classOidIndex (Tuple [] [VInt tableId]) slot
+    insertIndex classNameIndex (Tuple [] [VString tableName]) slot
 
     forM_ tableCols $ \(ColumnSchema _ colId colName colType) -> do
       let tuple =
@@ -228,7 +268,11 @@ createSystemTablesAndIndexes tables indexes = do
               VInt (length colNums),
               VIntList colNums
             ]
-    insertTuple pgIndexTable tuple
+    slot <- insertTuple pgIndexTable tuple
+    insertIndex
+      indexIndRelIdIndex
+      (Tuple [] [VInt indexTableId])
+      slot
 
   finishTransaction
 
@@ -239,6 +283,18 @@ scanRelation relId = do
 
   si <- beginIndexScan classOidIndex pgClassTable
   si <- rescanIndex si [ScanKey classOidColNum SEqual (VInt relId)] Forward
+  (si, tuple) <- indexScanNext si Forward
+  si <- endIndexScan si
+
+  return tuple
+
+scanRelationByName :: (StorageBackend m) => String -> Kyuu m (Maybe Tuple)
+scanRelationByName relName = do
+  pgClassTable <- fromJust <$> openTable pgClassTableId
+  classNameIndex <- fromJust <$> openIndex classNameIndexId
+
+  si <- beginIndexScan classNameIndex pgClassTable
+  si <- rescanIndex si [ScanKey classNameColNum SEqual (VString relName)] Forward
   (si, tuple) <- indexScanNext si Forward
   si <- endIndexScan si
 
@@ -314,3 +370,56 @@ buildTableColumns tableId = do
               return
                 (si, ColumnSchema relId colNum colName (toEnum colType) : rest)
             _ -> lerror (DataCorrupted "invalid type of attribute tuple")
+
+getTableIndexList :: (StorageBackend m) => Table m -> Kyuu m [OID]
+getTableIndexList Table {tableId} = do
+  pgIndexTable <- fromJust <$> openTable pgIndexTableId
+  indexIndRelIdIndex <-
+    fromJust
+      <$> openIndex indexIndRelIdIndexId
+
+  si <- beginIndexScan indexIndRelIdIndex pgIndexTable
+  si <-
+    rescanIndex
+      si
+      [ScanKey indexIndRelIdColNum SEqual (VInt tableId)]
+      Forward
+
+  (si, indexes) <- collectIndexes si
+  si <- endIndexScan si
+
+  return indexes
+  where
+    collectIndexes ::
+      (StorageBackend m) =>
+      IndexScanIterator m ->
+      Kyuu
+        m
+        (IndexScanIterator m, [OID])
+    collectIndexes si = do
+      (si, tuple) <- indexScanNext si Forward
+
+      case tuple of
+        Nothing -> return (si, [])
+        (Just tuple) -> do
+          relId <-
+            evalExpr
+              (ColumnRefExpr pgIndexTableId indexRelIdColNum)
+              tuple
+
+          case relId of
+            (VInt relId) -> do
+              (si, rest) <- collectIndexes si
+              return
+                (si, relId : rest)
+            _ -> lerror (DataCorrupted "invalid type of index tuple")
+
+catalogInsertTuple :: (StorageBackend m) => Table m -> Tuple -> Kyuu m ()
+catalogInsertTuple table tuple = do
+  indexes <- openIndexes table
+  slot <- insertTuple table tuple
+
+  forM_ indexes $ \index -> do
+    keyTuple <- formIndexKeyTuple index tuple
+    liftIO $ print keyTuple
+    insertIndex index keyTuple slot

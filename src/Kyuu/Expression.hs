@@ -63,10 +63,13 @@ evalBinOpExpr :: BinOp -> Value -> Value -> Value
 evalBinOpExpr BAdd (VDouble l) (VDouble r) = VDouble (l + r)
 evalBinOpExpr BAnd (VBool l) (VBool r) = VBool (l && r)
 evalBinOpExpr BEqual (VInt l) (VInt r) = VBool (l == r)
+evalBinOpExpr BEqual (VString l) (VString r) = VBool (l == r)
 evalBinOpExpr BLessThan (VInt l) (VInt r) = VBool (l < r)
 evalBinOpExpr BLessThan (VDouble l) (VDouble r) = VBool (l < r)
+evalBinOpExpr BLessThan (VString l) (VString r) = VBool (l < r)
 evalBinOpExpr BGreaterThan (VInt l) (VInt r) = VBool (l > r)
 evalBinOpExpr BGreaterThan (VDouble l) (VDouble r) = VBool (l > r)
+evalBinOpExpr BGreaterThan (VString l) (VString r) = VBool (l > r)
 
 evalExpr :: (StorageBackend m) => SqlExpr t -> Tuple -> Kyuu m t
 evalExpr (ColumnRefExpr tableId colId) (Tuple [] _) = return VNull

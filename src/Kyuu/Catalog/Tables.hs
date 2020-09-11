@@ -11,10 +11,16 @@ module Kyuu.Catalog.Tables
     attributeColNumColNum,
     pgIndexTableId,
     pgIndexTableSchema,
+    indexRelIdColNum,
+    indexIndRelIdColNum,
     classOidIndexId,
     classOidIndexSchema,
+    classNameIndexId,
+    classNameIndexSchema,
     attributeRelIdColNumIndexId,
     attributeRelIdColNumIndexSchema,
+    indexIndRelIdIndexId,
+    indexIndRelIdIndexSchema,
   )
 where
 
@@ -48,9 +54,9 @@ pgClassTableSchema =
     [_c "oid" SInt, _c "relname" SString]
 
 classOidColNum :: Int
-classNameColNum :: Int
 classOidColNum = 1
 
+classNameColNum :: Int
 classNameColNum = 2
 
 pgAttributeTableId :: OID
@@ -68,15 +74,15 @@ pgAttributeTableSchema =
     ]
 
 attributeRelIdColNum :: Int
-attributeNameColNum :: Int
-attributeTypeColNum :: Int
-attributeColNumColNum :: Int
 attributeRelIdColNum = 1
 
+attributeNameColNum :: Int
 attributeNameColNum = 2
 
+attributeTypeColNum :: Int
 attributeTypeColNum = 3
 
+attributeColNumColNum :: Int
 attributeColNumColNum = 4
 
 pgIndexTableId :: OID
@@ -93,6 +99,12 @@ pgIndexTableSchema =
       _c "indkey" SIntList
     ]
 
+indexRelIdColNum :: Int
+indexRelIdColNum = 1
+
+indexIndRelIdColNum :: Int
+indexIndRelIdColNum = 2
+
 classOidIndexId :: OID
 classOidIndexId = 4
 
@@ -100,8 +112,15 @@ classOidIndexSchema :: IndexSchema
 classOidIndexSchema =
   defineIndex classOidIndexId pgClassTableId [classOidColNum]
 
+classNameIndexId :: OID
+classNameIndexId = 5
+
+classNameIndexSchema :: IndexSchema
+classNameIndexSchema =
+  defineIndex classNameIndexId pgClassTableId [classNameColNum]
+
 attributeRelIdColNumIndexId :: OID
-attributeRelIdColNumIndexId = 5
+attributeRelIdColNumIndexId = 6
 
 attributeRelIdColNumIndexSchema :: IndexSchema
 attributeRelIdColNumIndexSchema =
@@ -109,3 +128,12 @@ attributeRelIdColNumIndexSchema =
     attributeRelIdColNumIndexId
     pgAttributeTableId
     [attributeRelIdColNum, attributeColNumColNum]
+
+indexIndRelIdIndexId :: OID
+indexIndRelIdIndexId = 7
+
+indexIndRelIdIndexSchema =
+  defineIndex
+    indexIndRelIdIndexId
+    pgIndexTableId
+    [indexIndRelIdColNum]

@@ -11,6 +11,7 @@ module Kyuu.Index
     rescanIndex,
     indexScanNext,
     endIndexScan,
+    formIndexKeyTuple,
     module X,
   )
 where
