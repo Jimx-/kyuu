@@ -1,24 +1,36 @@
+{-# LANGUAGE NamedFieldPuns #-}
+
 module Kyuu.Catalog.Tables
-  ( pgClassTableId,
+  ( -- pg_class
+    pgClassTableId,
     pgClassTableSchema,
     classOidColNum,
     classNameColNum,
+    getClassTableTuple,
+    -- pg_attribute
     pgAttributeTableId,
     pgAttributeTableSchema,
     attributeRelIdColNum,
     attributeNameColNum,
     attributeTypeColNum,
     attributeColNumColNum,
+    getAttributeTableTuple,
+    -- pg_index
     pgIndexTableId,
     pgIndexTableSchema,
     indexRelIdColNum,
     indexIndRelIdColNum,
+    getIndexTableTuple,
+    -- pg_class oid index
     classOidIndexId,
     classOidIndexSchema,
+    -- pg_class name index
     classNameIndexId,
     classNameIndexSchema,
+    -- pg_attribute rel id index
     attributeRelIdColNumIndexId,
     attributeRelIdColNumIndexSchema,
+    -- pg_index rel id index
     indexIndRelIdIndexId,
     indexIndRelIdIndexSchema,
   )
@@ -26,6 +38,7 @@ where
 
 import Kyuu.Catalog.Schema
 import Kyuu.Prelude
+import Kyuu.Value
 
 _c :: String -> SchemaType -> ColumnSchema
 _c = ColumnSchema 0 0
@@ -59,6 +72,11 @@ classOidColNum = 1
 classNameColNum :: Int
 classNameColNum = 2
 
+getClassTableTuple :: TableSchema -> Tuple
+getClassTableTuple TableSchema {tableId, tableName} =
+  let tupleDesc = map (\ColumnSchema {colTable, colId} -> ColumnDesc colTable colId) (tableCols pgClassTableSchema)
+   in Tuple tupleDesc [VInt tableId, VString tableName]
+
 pgAttributeTableId :: OID
 pgAttributeTableId = 2
 
@@ -85,6 +103,11 @@ attributeTypeColNum = 3
 attributeColNumColNum :: Int
 attributeColNumColNum = 4
 
+getAttributeTableTuple :: OID -> ColumnSchema -> Tuple
+getAttributeTableTuple tableId ColumnSchema {colId, colName, colType} =
+  let tupleDesc = map (\ColumnSchema {colTable, colId} -> ColumnDesc colTable colId) (tableCols pgAttributeTableSchema)
+   in Tuple tupleDesc [VInt tableId, VString colName, VInt (fromEnum colType), VInt colId]
+
 pgIndexTableId :: OID
 pgIndexTableId = 3
 
@@ -104,6 +127,17 @@ indexRelIdColNum = 1
 
 indexIndRelIdColNum :: Int
 indexIndRelIdColNum = 2
+
+getIndexTableTuple :: IndexSchema -> Tuple
+getIndexTableTuple IndexSchema {indexId, indexTableId, colNums} =
+  let tupleDesc = map (\ColumnSchema {colTable, colId} -> ColumnDesc colTable colId) (tableCols pgIndexTableSchema)
+   in Tuple
+        tupleDesc
+        [ VInt indexId,
+          VInt indexTableId,
+          VInt (length colNums),
+          VIntList colNums
+        ]
 
 classOidIndexId :: OID
 classOidIndexId = 4

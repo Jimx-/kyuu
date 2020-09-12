@@ -20,8 +20,7 @@ where
 import Control.Lens hiding (Index)
 import qualified Data.ByteString as B
 import Data.List (find)
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map ()
 import Data.Maybe (fromJust)
 import Kyuu.Catalog.Schema
 import Kyuu.Catalog.State
@@ -81,8 +80,7 @@ lookupTableIdByName name = do
           relId <- evalExpr (ColumnRefExpr pgClassTableId classOidColNum) tuple
 
           case relId of
-            (VInt relId) -> do
-              return $ Just relId
+            (VInt relId) -> return $ Just relId
             _ -> lerror (DataCorrupted "invalid type of class tuple")
 
 getTableColumns :: (StorageBackend m) => OID -> Kyuu m [ColumnSchema]
@@ -134,15 +132,23 @@ createTableWithCatalog (TableSchema _ tableName tableCols) = do
       storage <- S.createTable 1 tableId
 
       addNewRelationTuple schema
+      addNewAttributeTuples schema
 
       return $ Table tableId schema storage
 
 addNewRelationTuple :: (StorageBackend m) => TableSchema -> Kyuu m ()
-addNewRelationTuple (TableSchema tableId tableName _) = do
+addNewRelationTuple tableSchema = do
   pgClassTable <- fromJust <$> openTable pgClassTableId
-  let tupleDesc = map (\ColumnSchema {colTable, colId} -> ColumnDesc colTable colId) (tableCols pgClassTableSchema)
-      tuple = Tuple tupleDesc [VInt tableId, VString tableName]
+  let tuple = getClassTableTuple tableSchema
   catalogInsertTuple pgClassTable tuple
+
+addNewAttributeTuples :: (StorageBackend m) => TableSchema -> Kyuu m ()
+addNewAttributeTuples TableSchema {tableId, tableCols} = do
+  pgAttributeTable <- fromJust <$> openTable pgAttributeTableId
+
+  forM_ tableCols $ \columnSchema -> do
+    let tuple = getAttributeTableTuple tableId columnSchema
+    catalogInsertTuple pgAttributeTable tuple
 
 openTable :: (StorageBackend m) => OID -> Kyuu m (Maybe (Table m))
 openTable tableId = do
@@ -242,37 +248,22 @@ createSystemTablesAndIndexes tables indexes = do
       <$> openIndex attributeRelIdColNumIndexId
   indexIndRelIdIndex <- fromJust <$> openIndex indexIndRelIdIndexId
 
-  forM_ tables $ \(TableSchema tableId tableName tableCols) -> do
-    let tuple = Tuple [] [VInt tableId, VString tableName]
+  -- Populate pg_class and pg_attribute with system tables.
+  forM_ tables $ \tableSchema@TableSchema {tableId, tableCols} -> do
+    let tuple = getClassTableTuple tableSchema
     slot <- insertTuple pgClassTable tuple
-    insertIndex classOidIndex (Tuple [] [VInt tableId]) slot
-    insertIndex classNameIndex (Tuple [] [VString tableName]) slot
+    formIndexKeyTuple classOidIndex tuple >>= \keyTuple -> insertIndex classOidIndex keyTuple slot
+    formIndexKeyTuple classNameIndex tuple >>= \keyTuple -> insertIndex classNameIndex keyTuple slot
 
-    forM_ tableCols $ \(ColumnSchema _ colId colName colType) -> do
-      let tuple =
-            Tuple
-              []
-              [VInt tableId, VString colName, VInt (fromEnum colType), VInt colId]
+    forM_ tableCols $ \columnSchema -> do
+      let tuple = getAttributeTableTuple tableId columnSchema
       slot <- insertTuple pgAttributeTable tuple
-      insertIndex
-        attributeRelIdColNumIndex
-        (Tuple [] [VInt tableId, VInt colId])
-        slot
+      formIndexKeyTuple attributeRelIdColNumIndex tuple >>= \keyTuple -> insertIndex attributeRelIdColNumIndex keyTuple slot
 
-  forM_ indexes $ \(IndexSchema indexId indexTableId colNums) -> do
-    let tuple =
-          Tuple
-            []
-            [ VInt indexId,
-              VInt indexTableId,
-              VInt (length colNums),
-              VIntList colNums
-            ]
+  forM_ indexes $ \indexSchema@(IndexSchema indexId indexTableId colNums) -> do
+    let tuple = getIndexTableTuple indexSchema
     slot <- insertTuple pgIndexTable tuple
-    insertIndex
-      indexIndRelIdIndex
-      (Tuple [] [VInt indexTableId])
-      slot
+    formIndexKeyTuple indexIndRelIdIndex tuple >>= \keyTuple -> insertIndex indexIndRelIdIndex keyTuple slot
 
   finishTransaction
 
@@ -421,5 +412,4 @@ catalogInsertTuple table tuple = do
 
   forM_ indexes $ \index -> do
     keyTuple <- formIndexKeyTuple index tuple
-    liftIO $ print keyTuple
     insertIndex index keyTuple slot

@@ -73,7 +73,7 @@ prog2 = do
   execSimpleStmt
     "create table emp1 (empno int, ename varchar, sal double, deptno int)"
   execSimpleStmt "select * from pg_class"
-  execSimpleStmt "select * from pg_index"
+  execSimpleStmt "select * from pg_attribute"
 
 main :: IO ()
 main = do
