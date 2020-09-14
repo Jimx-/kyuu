@@ -5,6 +5,7 @@ module Kyuu.Expression
   ( BinOp (..),
     SqlExpr (..),
     getBinOp,
+    getCommutator,
     getOutputTableId,
     getOutputColumnId,
     isSargableExpr,
@@ -24,6 +25,8 @@ data BinOp
   | BEqual
   | BLessThan
   | BGreaterThan
+  | BLessEqual
+  | BGreaterEqual
   deriving (Eq, Show)
 
 data SqlExpr t where
@@ -42,6 +45,13 @@ getBinOp "and" = BAnd
 getBinOp "=" = BEqual
 getBinOp "<" = BLessThan
 getBinOp ">" = BGreaterThan
+
+getCommutator :: BinOp -> Maybe BinOp
+getCommutator BAdd = Just BAdd
+getCommutator BEqual = Just BEqual
+getCommutator BLessThan = Just BGreaterThan
+getCommutator BGreaterThan = Just BLessThan
+getCommutator _ = Nothing
 
 getOutputTableId :: SqlExpr Value -> OID
 getOutputTableId (ColumnRefExpr tId _) = tId

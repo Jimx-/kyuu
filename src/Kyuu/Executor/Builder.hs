@@ -1,4 +1,6 @@
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -8,6 +10,7 @@ module Kyuu.Executor.Builder
   )
 where
 
+import Kyuu.Catalog.Schema
 import Kyuu.Core
 import Kyuu.Executor.Operators
 import Kyuu.Planner.PhysicalPlan
@@ -22,8 +25,10 @@ buildExecPlan pp = do
   return $ ExecutionPlan root
 
 buildOperator :: (StorageBackend m) => PhysicalPlan -> Kyuu m (Operator m)
-buildOperator (TableScan tableId tableName filters tupleDesc) =
+buildOperator (TableScan tableId _ filters tupleDesc) =
   return $ TableScanOp tableId filters tupleDesc Nothing
+buildOperator (IndexScan tableId IndexSchema {indexId} filters indexQuals tupleDesc) =
+  return $ IndexScanOp tableId indexId filters tupleDesc Nothing
 buildOperator (Selection conds schema child) = do
   childOp <- buildOperator child
   return $ SelectionOp conds schema childOp

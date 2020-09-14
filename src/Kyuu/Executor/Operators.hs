@@ -10,6 +10,7 @@ import Kyuu.Catalog.Catalog
 import Kyuu.Catalog.Schema
 import Kyuu.Core
 import Kyuu.Expression
+import Kyuu.Index
 import Kyuu.Prelude
 import Kyuu.Table
 import Kyuu.Value
@@ -20,6 +21,13 @@ data Operator m
         filters :: [SqlExpr Value],
         tupleDesc :: TupleDesc,
         scanIterator :: Maybe (TableScanIterator m)
+      }
+  | IndexScanOp
+      { tableId :: OID,
+        indexId :: OID,
+        filters :: [SqlExpr Value],
+        tupleDesc :: TupleDesc,
+        indexScanIterator :: Maybe (IndexScanIterator m)
       }
   | SelectionOp
       { filter :: [SqlExpr Value],
@@ -55,6 +63,16 @@ instance Show (Operator m) where
   show (TableScanOp tId filters tupleDesc _) =
     "TableScanOp {tableId = "
       ++ show tId
+      ++ ", filters = "
+      ++ show filters
+      ++ ", tupleDesc = "
+      ++ show tupleDesc
+      ++ "}"
+  show (IndexScanOp tId indexId filters tupleDesc _) =
+    "IndexScanOp {tableId = "
+      ++ show tId
+      ++ ", indexId = "
+      ++ show indexId
       ++ ", filters = "
       ++ show filters
       ++ ", tupleDesc = "

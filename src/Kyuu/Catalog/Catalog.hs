@@ -14,6 +14,7 @@ module Kyuu.Catalog.Catalog
     createTableWithCatalog,
     openTable,
     openIndex,
+    openIndexes,
   )
 where
 
@@ -47,19 +48,20 @@ lookupTableById tId = do
 
 getTableById :: (StorageBackend m) => OID -> Kyuu m (Maybe TableSchema)
 getTableById tableId = do
-  state <- takeCatalogState
+  state <- getCatalogState
 
   case find
     (\TableSchema {tableId = tableId'} -> tableId == tableId')
     (state ^. tableSchemas_) of
     (Just tableSchema) -> do
-      putCatalogState state
       return $ Just tableSchema
     _ -> do
       tableSchema <- buildTableSchema tableId
       case tableSchema of
-        Nothing -> return Nothing
+        Nothing -> do
+          return Nothing
         (Just tableSchema) -> do
+          state <- takeCatalogState
           let newState = over tableSchemas_ (tableSchema :) state
           putCatalogState newState
           return $ Just tableSchema
@@ -68,9 +70,7 @@ lookupTableIdByName :: (StorageBackend m) => String -> Kyuu m (Maybe OID)
 lookupTableIdByName name = do
   state <- getCatalogState
 
-  case find
-    (\TableSchema {tableName = tableName} -> tableName == name)
-    (state ^. tableSchemas_) of
+  case find ((== name) . tableName) (state ^. tableSchemas_) of
     (Just TableSchema {tableId}) -> return $ Just tableId
     _ -> do
       tuple <- scanRelationByName name
@@ -88,9 +88,7 @@ getTableColumns tId = do
   state <- getCatalogState
   let schema =
         fromJust $
-          find
-            (\TableSchema {tableId = tableId} -> tableId == tId)
-            (state ^. tableSchemas_)
+          find (\TableSchema {tableId = tableId} -> tableId == tId) (state ^. tableSchemas_)
   return $ tableCols schema
 
 lookupTableColumnById ::
@@ -99,7 +97,7 @@ lookupTableColumnById tId cId = do
   table <- lookupTableById tId
   case table of
     Just TableSchema {tableCols = tableCols} ->
-      return $ find (\ColumnSchema {colId = colId} -> colId == cId) tableCols
+      return $ find ((== cId) . colId) tableCols
     _ -> return Nothing
 
 lookupTableColumnByName ::
@@ -108,10 +106,7 @@ lookupTableColumnByName tId name = do
   table <- lookupTableById tId
   case table of
     Just TableSchema {tableCols = tableCols} ->
-      return $
-        find
-          (\ColumnSchema {colName = colName} -> colName == name)
-          tableCols
+      return $ find ((== name) . colName) tableCols
     _ -> return Nothing
 
 createTableWithCatalog :: (StorageBackend m) => TableSchema -> Kyuu m (Table m)
@@ -167,10 +162,7 @@ openTable tableId = do
 lookupIndexById :: (StorageBackend m) => OID -> Kyuu m (Maybe IndexSchema)
 lookupIndexById indId = do
   state <- getCatalogState
-  return $
-    find
-      (\IndexSchema {indexId} -> indexId == indId)
-      (state ^. indexSchemas_)
+  return $ find (\IndexSchema {indexId} -> indexId == indId) (state ^. indexSchemas_)
 
 keyComparator :: B.ByteString -> B.ByteString -> Maybe Ordering
 keyComparator a b = case decodeTupleWithDesc a [] of

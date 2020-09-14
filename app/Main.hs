@@ -16,6 +16,7 @@ import Kyuu.Executor.Operators
 import Kyuu.Parse.Analyzer
 import qualified Kyuu.Planner.LogicalPlan as L
 import qualified Kyuu.Planner.PhysicalPlan as P
+import Kyuu.Planner.PhysicalPlanOptimizer
 import Kyuu.Planner.RuleBasedOptimizer
 import Kyuu.Prelude
 import Kyuu.Storage.SuziQ.Backend
@@ -49,7 +50,7 @@ execSimpleStmt stmt = case parseSQLStatement stmt of
           liftIO $
             putStrLn
               "=============================="
-          P.getPhysicalPlan logicalPlan
+          getPhysicalPlan logicalPlan
         else P.buildPhysicalPlanForQuery qry
 
     liftIO $ pPrint physicalPlan
@@ -63,17 +64,16 @@ execSimpleStmt stmt = case parseSQLStatement stmt of
 
 prog1 :: (StorageBackend m) => Kyuu m ()
 prog1 = do
-  execSimpleStmt
-    "create table emp (empno int, ename varchar, sal double, deptno int)"
-  execSimpleStmt "insert into emp (empno, ename) values (0, 'hello')"
+  -- execSimpleStmt
+  --   "create table emp (empno int, ename varchar, sal double, deptno int)"
+  -- execSimpleStmt "insert into emp (empno, ename) values (0, 'hello')"
   execSimpleStmt "select empno, ename from emp"
 
 prog2 :: (StorageBackend m) => Kyuu m ()
 prog2 = do
-  execSimpleStmt
-    "create table emp1 (empno int, ename varchar, sal double, deptno int)"
-  execSimpleStmt "select * from pg_class"
-  execSimpleStmt "select * from pg_attribute"
+  execSimpleStmt "select * from pg_class where oid = 1"
+
+-- execSimpleStmt "select * from pg_attribute, pg_class"
 
 main :: IO ()
 main = do

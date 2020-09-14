@@ -103,6 +103,15 @@ appendRangeTable entry = do
   state <- get
   return $ RangeTableRef (length (state ^. rangeTable_) - 1)
 
+setTargetTable :: (StorageBackend m) => String -> Analyzer m RangeTableRef
+setTargetTable tableName = do
+  tableId <- lift $ lookupTableIdByName tableName
+  case tableId of
+    (Just id) -> do
+      targetTable <- lift $ openTable id
+      appendRangeTable (RteTable id tableName)
+    Nothing -> lift $ lerror $ TableWithNameNotFound tableName
+
 getRangeTable :: (MonadState AnalyzerState m) => m RangeTable
 getRangeTable = get >>= \state -> return $ state ^. rangeTable_
 
@@ -306,7 +315,9 @@ transformFromItemAlias ::
 transformFromItemAlias (S.TRSimple [S.Name _ tableName]) alias = do
   tableId <- lift $ lookupTableIdByName tableName
   case tableId of
-    (Just id) -> appendRangeTable (RteTable id tableName)
+    (Just id) -> do
+      targetTable <- lift $ openTable id
+      appendRangeTable (RteTable id tableName)
     Nothing -> lift $ lerror $ TableWithNameNotFound tableName
 
 transformDDL :: (StorageBackend m) => S.Statement -> Analyzer m ParserNode
@@ -340,10 +351,7 @@ transformColumnType (S.TypeName [S.Name _ typeName]) =
 
 transformInsert :: (StorageBackend m) => S.Statement -> Analyzer m ParserNode
 transformInsert (S.Insert [S.Name _ tableName] cols source) = do
-  tableId <- lift $ lookupTableIdByName tableName
-  targetTable@(RangeTableRef tableRef) <- case tableId of
-    (Just id) -> appendRangeTable (RteTable id tableName)
-    Nothing -> lift $ lerror $ TableWithNameNotFound tableName
+  targetTable@(RangeTableRef tableRef) <- setTargetTable tableName
 
   rangeTable <- getRangeTable
   targets <- transformInsertTargets (rangeTable !! tableRef) cols

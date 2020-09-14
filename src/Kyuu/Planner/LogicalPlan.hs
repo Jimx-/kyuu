@@ -20,7 +20,9 @@ import Control.Monad.State.Lazy
 import Kyuu.Catalog.Catalog
 import Kyuu.Catalog.Schema
 import Kyuu.Core
+import Kyuu.Error
 import Kyuu.Expression
+import Kyuu.Index
 import Kyuu.Parse.Analyzer
 import Kyuu.Prelude
 import Kyuu.Value
@@ -32,6 +34,7 @@ data LogicalPlan
       { tableId :: OID,
         tableName :: String,
         searchArgs :: [SqlExpr Value],
+        indexInfos :: [IndexSchema],
         tupleDesc :: TupleDesc
       }
   | Selection
@@ -109,10 +112,17 @@ buildFromTable ::
   RangeTableEntry ->
   PlanBuilder m LogicalPlan
 buildFromTable _ (RteTable tableId tableName) = do
-  columns <- lift $ getTableColumns tableId
-  tupleDesc <- forM columns $ \ColumnSchema {colTable, colId} ->
-    return $ ColumnDesc colTable colId
-  return $ DataSource tableId tableName [] tupleDesc
+  table <- lift $ openTable tableId
+
+  case table of
+    (Just table) -> do
+      columns <- lift $ getTableColumns tableId
+      tupleDesc <- forM columns $ \ColumnSchema {colTable, colId} ->
+        return $ ColumnDesc colTable colId
+      indexes <- lift $ openIndexes table
+
+      return $ DataSource tableId tableName [] (map indexSchema indexes) tupleDesc
+    _ -> lift $ lerror $ TableNotFound tableId
 buildFromTable table j@(RteJoin left right) = do
   lp <- buildFromItem left table
   rp <- buildFromItem right table

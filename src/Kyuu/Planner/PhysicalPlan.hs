@@ -3,7 +3,6 @@
 module Kyuu.Planner.PhysicalPlan
   ( PhysicalPlan (..),
     buildPhysicalPlanForQuery,
-    getPhysicalPlan,
   )
 where
 
@@ -20,6 +19,13 @@ data PhysicalPlan
       { tableId :: OID,
         tableName :: String,
         filters :: [SqlExpr Value],
+        tupleDesc :: TupleDesc
+      }
+  | IndexScan
+      { tableId :: OID,
+        indexSchema :: IndexSchema,
+        filters :: [SqlExpr Value],
+        indexQuals :: [SqlExpr Value],
         tupleDesc :: TupleDesc
       }
   | Selection
@@ -68,36 +74,3 @@ buildSimpleStmt (InsertStmt ref targets exprList) rangeTable = do
             (getOutputTableId target)
             (getOutputColumnId target)
             expr
-
--- | Pick the best physical plan among all possible ones for a logical plan
-getPhysicalPlan :: (StorageBackend m) => L.LogicalPlan -> Kyuu m PhysicalPlan
-getPhysicalPlan lp = do
-  ps <- genPhysicalPlans lp
-  return $ head ps
-
--- | Generate all possible physical plans for a logical plan
-genPhysicalPlans :: (StorageBackend m) => L.LogicalPlan -> Kyuu m [PhysicalPlan]
-genPhysicalPlans (L.DataSource tableId tableName sArgs schema) =
-  return [TableScan tableId tableName sArgs schema]
-genPhysicalPlans (L.Selection conds schema child) = do
-  childPlan <- getPhysicalPlan child
-  return [Selection conds schema childPlan]
-genPhysicalPlans (L.Projection exprs schema child) = do
-  childPlan <- getPhysicalPlan child
-  return [Projection exprs schema childPlan]
-genPhysicalPlans lp@L.Join {} = do
-  nestedLoopJoin <- genNestedLoopJoin lp
-  return [nestedLoopJoin]
-
-genNestedLoopJoin :: (StorageBackend m) => L.LogicalPlan -> Kyuu m PhysicalPlan
-genNestedLoopJoin (L.Join joinType joinQuals otherQuals schema left right) = do
-  leftPlan <- getPhysicalPlan left
-  rightPlan <- getPhysicalPlan right
-  return $
-    NestedLoopJoin
-      joinType
-      joinQuals
-      otherQuals
-      schema
-      leftPlan
-      rightPlan
