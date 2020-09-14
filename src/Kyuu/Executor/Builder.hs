@@ -28,7 +28,7 @@ buildOperator :: (StorageBackend m) => PhysicalPlan -> Kyuu m (Operator m)
 buildOperator (TableScan tableId _ filters tupleDesc) =
   return $ TableScanOp tableId filters tupleDesc Nothing
 buildOperator (IndexScan tableId IndexSchema {indexId} filters indexQuals tupleDesc) =
-  return $ IndexScanOp tableId indexId filters tupleDesc Nothing
+  return $ IndexScanOp tableId indexId filters indexQuals tupleDesc Nothing
 buildOperator (Selection conds schema child) = do
   childOp <- buildOperator child
   return $ SelectionOp conds schema childOp

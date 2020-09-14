@@ -6,6 +6,7 @@ module Kyuu.Index
     IndexScanIterator (..),
     ScanOperator (..),
     ScanKey (..),
+    getScanOperator,
     insertIndex,
     beginIndexScan,
     rescanIndex,
@@ -52,6 +53,11 @@ data ScanOperator
 
 data ScanKey = ScanKey Int ScanOperator Value
   deriving (Show)
+
+getScanOperator :: BinOp -> ScanOperator
+getScanOperator BEqual = SEqual
+getScanOperator BLessThan = SLess
+getScanOperator BGreaterThan = SGreater
 
 getExprOperator :: ScanOperator -> BinOp
 getExprOperator SEqual = BEqual

@@ -18,6 +18,7 @@ data Err
   | InvalidState String
   | SyntaxError String
   | DataCorrupted String
+  | InvalidExpression String
   deriving (Eq, Ord)
 
 instance Show Err where
@@ -34,3 +35,4 @@ instance Show Err where
   show (InvalidState s) = "Invalid state: " ++ s
   show (SyntaxError s) = "Syntax error: " ++ s
   show (DataCorrupted s) = "Data corrupted: " ++ s
+  show (InvalidExpression s) = "Invalid expression: " ++ s

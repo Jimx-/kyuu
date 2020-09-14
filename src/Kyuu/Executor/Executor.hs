@@ -18,6 +18,7 @@ import Kyuu.Catalog.Schema
 import Kyuu.Core
 import Kyuu.Error
 import Kyuu.Executor.Builder
+import Kyuu.Executor.Nodes.IndexScan
 import Kyuu.Executor.Operators
 import Kyuu.Expression
 import Kyuu.Index
@@ -52,16 +53,7 @@ open op@(TableScanOp tableId _ _ _) = do
       iterator <- beginTableScan table
       return $ op {scanIterator = Just iterator}
     _ -> lerror (TableNotFound tableId)
-open op@(IndexScanOp tableId indexId _ _ _) = do
-  table <- openTable tableId
-  index <- openIndex indexId
-  case (table, index) of
-    (Just table, Just index) -> do
-      si <- beginIndexScan index table
-      si <- rescanIndex si [] Forward
-      return $ op {indexScanIterator = Just si}
-    (Just _, Nothing) -> lerror (IndexNotFound indexId)
-    (Nothing, _) -> lerror (TableNotFound tableId)
+open op@IndexScanOp {} = initIndexScanOp op
 open op@SelectionOp {input = input} = do
   newInput <- open input
   return op {input = newInput}
@@ -105,7 +97,7 @@ nextTuple op@(TableScanOp tableId filters tupleDesc scanIterator) =
                 )
             _ -> nextTuple newOp
     _ -> lerror (InvalidState "scan operator is not open")
-nextTuple op@(IndexScanOp tableId indexId filters tupleDesc indexScanIterator) =
+nextTuple op@(IndexScanOp tableId indexId filters _ tupleDesc indexScanIterator) =
   case indexScanIterator of
     (Just indexScanIterator) -> do
       (newIterator, tuple) <-
@@ -308,5 +300,5 @@ nextTuple (PrintOp printHeader tupleDesc input) = do
   return (newTuple, PrintOp False tupleDesc newInput)
 
 close :: (StorageBackend m) => Operator m -> Kyuu m ()
-close IndexScanOp {indexScanIterator = Just si} = void $ endIndexScan si
+close op@IndexScanOp {} = closeIndexScanOp op
 close _ = return ()

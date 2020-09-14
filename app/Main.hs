@@ -64,9 +64,9 @@ execSimpleStmt stmt = case parseSQLStatement stmt of
 
 prog1 :: (StorageBackend m) => Kyuu m ()
 prog1 = do
-  -- execSimpleStmt
-  --   "create table emp (empno int, ename varchar, sal double, deptno int)"
-  -- execSimpleStmt "insert into emp (empno, ename) values (0, 'hello')"
+  execSimpleStmt
+    "create table emp (empno int, ename varchar, sal double, deptno int)"
+  execSimpleStmt "insert into emp (empno, ename) values (0, 'hello')"
   execSimpleStmt "select empno, ename from emp"
 
 prog2 :: (StorageBackend m) => Kyuu m ()

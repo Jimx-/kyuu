@@ -26,6 +26,7 @@ data Operator m
       { tableId :: OID,
         indexId :: OID,
         filters :: [SqlExpr Value],
+        indexQuals :: [SqlExpr Value],
         tupleDesc :: TupleDesc,
         indexScanIterator :: Maybe (IndexScanIterator m)
       }
@@ -68,13 +69,15 @@ instance Show (Operator m) where
       ++ ", tupleDesc = "
       ++ show tupleDesc
       ++ "}"
-  show (IndexScanOp tId indexId filters tupleDesc _) =
+  show (IndexScanOp tId indexId filters indexQuals tupleDesc _) =
     "IndexScanOp {tableId = "
       ++ show tId
       ++ ", indexId = "
       ++ show indexId
       ++ ", filters = "
       ++ show filters
+      ++ ", indexQuals = "
+      ++ show indexQuals
       ++ ", tupleDesc = "
       ++ show tupleDesc
       ++ "}"
