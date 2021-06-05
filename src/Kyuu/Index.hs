@@ -71,7 +71,7 @@ getIndexScanPredicate tupleDesc scanKeys buf =
     (Just tuple) -> Just $ checkScanKeys scanKeys tuple
   where
     getColValue colNum (Tuple [] _) = VNull
-    getColValue colNum (Tuple ((ColumnDesc _ colNum') : tds) (v : vds)) =
+    getColValue colNum (Tuple (ColumnDesc _ colNum' : tds) (v : vds)) =
       if colNum == colNum'
         then v
         else getColValue colNum (Tuple tds vds)

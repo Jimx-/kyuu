@@ -25,7 +25,7 @@ import Text.Pretty.Simple (pPrint)
 execSimpleStmt :: (StorageBackend m) => String -> Kyuu m ()
 execSimpleStmt stmt = case parseSQLStatement stmt of
   (Right tree) -> do
-    void $ startTransaction
+    void startTransaction
     liftIO $ putStrLn "=============================="
     liftIO $ pPrint tree
     liftIO $ putStrLn "=============================="
@@ -71,7 +71,7 @@ prog1 = do
 
 prog2 :: (StorageBackend m) => Kyuu m ()
 prog2 = do
-  execSimpleStmt "select * from pg_class where oid = 1"
+  execSimpleStmt "select * from pg_class where oid > 1"
 
 -- execSimpleStmt "select * from pg_attribute, pg_class"
 

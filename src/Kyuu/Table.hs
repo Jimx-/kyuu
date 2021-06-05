@@ -7,6 +7,7 @@ module Kyuu.Table
     insertTuple,
     beginTableScan,
     tableScanNext,
+    estimateTableSize,
     module X,
   )
 where
@@ -67,3 +68,8 @@ tableScanNext TableScanIterator {table = table@Table {tableSchema}, iterator} di
               ( DataCorrupted
                   "cannot decode tuple"
               )
+
+estimateTableSize :: (StorageBackend m) => Table m -> Kyuu m Int
+estimateTableSize Table {tableStorage} = do
+  fileSize <- S.tableFileSize tableStorage
+  return fileSize

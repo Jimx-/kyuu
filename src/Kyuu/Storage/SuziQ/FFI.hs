@@ -23,6 +23,7 @@ module Kyuu.Storage.SuziQ.FFI
     sq_start_transaction,
     sq_free_transaction,
     sq_commit_transaction,
+    sq_table_get_file_size,
     sq_table_insert_tuple,
     sq_free_item_pointer,
     sq_table_begin_scan,
@@ -55,6 +56,7 @@ import Foreign.C.String
 import Foreign.C.Types
   ( CChar,
     CInt (..),
+    CLong (..),
   )
 import Foreign.ForeignPtr
 import Foreign.Ptr
@@ -139,6 +141,9 @@ foreign import ccall unsafe "&sq_free_transaction"
 
 foreign import ccall unsafe "sq_commit_transaction"
   sq_commit_transaction :: Ptr DBPtr -> Ptr TransactionPtr -> IO ()
+
+foreign import ccall unsafe "sq_table_get_file_size"
+  sq_table_get_file_size :: Ptr TablePtr -> Ptr DBPtr -> IO CLong
 
 foreign import ccall unsafe "sq_table_insert_tuple"
   sq_table_insert_tuple :: Ptr TablePtr -> Ptr DBPtr -> Ptr TransactionPtr -> Ptr CChar -> CInt -> IO (Ptr TupleSlotPtr)

@@ -64,6 +64,10 @@ instance StorageBackend SuziQ where
     db <- getDB
     sqCommitTransaction db txn
 
+  tableFileSize table = do
+    db <- getDB
+    sqTableFileSize table db
+
   insertTuple txn table tuple = do
     db <- getDB
     sqInsertTuple table db txn tuple
@@ -301,9 +305,21 @@ sqCommitTransaction db txn = do
     Nothing -> return ()
     (Just err) -> lerror err
 
+sqTableFileSize :: SqTable -> SqDB -> SuziQ Int
+sqTableFileSize table db = control $ \runInBase ->
+  withForeignPtr db $ \database -> withForeignPtr table $ \table -> do
+    size <-
+      sq_table_get_file_size table database
+    runInBase $
+      if size /= 0
+        then return $ fromIntegral size
+        else do
+          err <- lastError
+          lerror err
+
 sqInsertTuple ::
   SqTable -> SqDB -> SqTransaction -> B.ByteString -> SuziQ SqTupleSlot
-sqInsertTuple table db txn tuple = control $ \runInBase -> do
+sqInsertTuple table db txn tuple = control $ \runInBase ->
   withForeignPtr db $ \database -> withForeignPtr table $ \table ->
     withForeignPtr txn $ \txn ->
       B.useAsCStringLen tuple $ \(buf, len) -> do
@@ -501,7 +517,7 @@ sqRescanIndex db (SqIndexScanIterator oldPred iteratorPtr) startKey predicate =
       case startKey of
         (Just startKey) ->
           B.useAsCStringLen startKey $
-            \(keyPtr, keyLen) -> do
+            \(keyPtr, keyLen) ->
               sq_index_rescan
                 iterator
                 database

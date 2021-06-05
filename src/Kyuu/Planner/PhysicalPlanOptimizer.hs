@@ -26,7 +26,7 @@ genPhysicalPlans ds@(L.DataSource tableId tableName sArgs indexInfos schema) = d
   let indexPaths = buildIndexPaths ds
   let scanPath = mkScanPath tableId tableName sArgs
   let allPaths = indexPaths ++ [scanPath]
-  return $ map (flip createScanPlan schema) allPaths
+  return $ map (`createScanPlan` schema) allPaths
 genPhysicalPlans (L.Selection conds schema child) = do
   childPlan <- getPhysicalPlan child
   return [P.Selection conds schema childPlan]

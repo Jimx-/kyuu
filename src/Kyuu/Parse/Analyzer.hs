@@ -368,8 +368,7 @@ transformInsert (S.Insert [S.Name _ tableName] cols source) = do
           ( SyntaxError
               "INSERT has more expressions than target columns"
           )
-    else do
-      return $ InsertStmt targetTable targets exprs
+    else return $ InsertStmt targetTable targets exprs
 
 transformInsertSource ::
   (StorageBackend m) => S.InsertSource -> Analyzer m [[SqlExpr Value]]

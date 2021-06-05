@@ -83,7 +83,7 @@ evalBinOpExpr BGreaterThan (VString l) (VString r) = VBool (l > r)
 
 evalExpr :: (StorageBackend m) => SqlExpr t -> Tuple -> Kyuu m t
 evalExpr (ColumnRefExpr tableId colId) (Tuple [] _) = return VNull
-evalExpr expr@(ColumnRefExpr tableId colId) (Tuple ((ColumnDesc tableId' colId') : tds) (v : vds)) =
+evalExpr expr@(ColumnRefExpr tableId colId) (Tuple (ColumnDesc tableId' colId' : tds) (v : vds)) =
   if tableId == tableId' && colId == colId'
     then return v
     else evalExpr expr (Tuple tds vds)

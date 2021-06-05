@@ -39,6 +39,7 @@ class (MonadBaseControl IO m, MonadIO m) => StorageBackend m where
   openIndex :: OID -> OID -> (B.ByteString -> B.ByteString -> Maybe Ordering) -> m (Maybe (IndexType m))
   startTransaction :: IsolationLevel -> m (TransactionType m)
   commitTransaction :: TransactionType m -> m ()
+  tableFileSize :: TableType m -> m Int
   insertTuple :: TransactionType m -> TableType m -> B.ByteString -> m (TupleSlotType m)
   beginTableScan :: TransactionType m -> TableType m -> m (TableScanIteratorType m)
   tableScanNext :: TableScanIteratorType m -> ScanDirection -> m (TableScanIteratorType m, Maybe (TupleType m))
@@ -67,6 +68,7 @@ instance StorageBackend m => StorageBackend (StateT s m) where
   openIndex dbId indexId keyComp = lift $ openIndex dbId indexId keyComp
   startTransaction = lift . startTransaction
   commitTransaction = lift . commitTransaction
+  tableFileSize = lift . tableFileSize
   insertTuple txn table tuple = lift $ insertTuple txn table tuple
   beginTableScan txn table = lift $ beginTableScan txn table
   tableScanNext iterator dir = lift $ tableScanNext iterator dir
@@ -97,6 +99,7 @@ instance StorageBackend m => StorageBackend (ExceptT e m) where
   openIndex dbId indexId keyComp = lift $ openIndex dbId indexId keyComp
   startTransaction = lift . startTransaction
   commitTransaction = lift . commitTransaction
+  tableFileSize = lift . tableFileSize
   insertTuple txn table tuple = lift $ insertTuple txn table tuple
   beginTableScan txn table = lift $ beginTableScan txn table
   tableScanNext iterator dir = lift $ tableScanNext iterator dir
@@ -127,6 +130,7 @@ instance StorageBackend m => StorageBackend (ReaderT r m) where
   openIndex dbId indexId keyComp = lift $ openIndex dbId indexId keyComp
   startTransaction = lift . startTransaction
   commitTransaction = lift . commitTransaction
+  tableFileSize = lift . tableFileSize
   insertTuple txn table tuple = lift $ insertTuple txn table tuple
   beginTableScan txn table = lift $ beginTableScan txn table
   tableScanNext iterator dir = lift $ tableScanNext iterator dir

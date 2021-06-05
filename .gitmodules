@@ -1,6 +1,3 @@
 [submodule "lib/suziQ"]
 	path = lib/suziQ
 	url = https://github.com/Jimx-/suziQ.git
-[submodule "lib/wei"]
-	path = lib/wei
-	url = https://github.com/Jimx-/wei.git

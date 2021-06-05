@@ -1,6 +1,4 @@
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 module Kyuu.Executor.Nodes.IndexScan
   ( initIndexScanOp,
@@ -45,7 +43,7 @@ buildScanKeys = mapM buildScanKey
     buildScanKey :: (StorageBackend m) => SqlExpr Value -> Kyuu m ScanKey
     -- the expression has been normalized to the form (column op value) in buildIndexPaths
     buildScanKey (BinOpExpr op (ColumnRefExpr _ colNum) (ValueExpr val)) = return $ ScanKey colNum (getScanOperator op) val
-    buildScanKey expr = lerror $ InvalidExpression $ "index qualifier " ++ (show expr)
+    buildScanKey expr = lerror $ InvalidExpression $ "index qualifier " ++ show expr
 
 closeIndexScanOp :: (StorageBackend m) => Operator m -> Kyuu m ()
 closeIndexScanOp IndexScanOp {indexScanIterator = Just si} = void $ endIndexScan si

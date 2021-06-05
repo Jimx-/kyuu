@@ -25,6 +25,7 @@ import Kyuu.Expression
 import Kyuu.Index
 import Kyuu.Parse.Analyzer
 import Kyuu.Prelude
+import Kyuu.Table
 import Kyuu.Value
 
 data JoinType = InnerJoin | LeftOuterJoin | RightOuterJoin | FullOuterJoin deriving (Eq, Show)
@@ -120,6 +121,7 @@ buildFromTable _ (RteTable tableId tableName) = do
       tupleDesc <- forM columns $ \ColumnSchema {colTable, colId} ->
         return $ ColumnDesc colTable colId
       indexes <- lift $ openIndexes table
+      size <- lift $ estimateTableSize table
 
       return $ DataSource tableId tableName [] (map indexSchema indexes) tupleDesc
     _ -> lift $ lerror $ TableNotFound tableId

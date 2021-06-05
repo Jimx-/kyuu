@@ -53,13 +53,11 @@ getTableById tableId = do
   case find
     (\TableSchema {tableId = tableId'} -> tableId == tableId')
     (state ^. tableSchemas_) of
-    (Just tableSchema) -> do
-      return $ Just tableSchema
+    (Just tableSchema) -> return $ Just tableSchema
     _ -> do
       tableSchema <- buildTableSchema tableId
       case tableSchema of
-        Nothing -> do
-          return Nothing
+        Nothing -> return Nothing
         (Just tableSchema) -> do
           state <- takeCatalogState
           let newState = over tableSchemas_ (tableSchema :) state
