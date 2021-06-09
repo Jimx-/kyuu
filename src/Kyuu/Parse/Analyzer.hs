@@ -17,6 +17,7 @@ where
 import Control.Lens
 import Control.Monad.State.Lazy
 import Data.List (find)
+import Data.Maybe (catMaybes)
 import Kyuu.Catalog.Catalog
 import Kyuu.Catalog.Schema
 import Kyuu.Core
@@ -137,6 +138,7 @@ getTableColumn ::
   String ->
   Analyzer m (Maybe ColumnSchema)
 getTableColumn (RteTable tId _) name = lift $ lookupTableColumnByName tId name
+getTableColumn _ _ = return Nothing
 
 addColumnByName ::
   (StorageBackend m) =>
@@ -147,13 +149,13 @@ addColumnByName ::
 addColumnByName Nothing colName Nothing = do
   state <- get
   schemas <-
-    sequence
+    catMaybes
       <$> forM (state ^. rangeTable_) (`getTableColumn` colName)
 
   case schemas of
-    Nothing -> lift $ lerror (ColumnNotFound colName)
-    Just (x : y : xs) -> lift $ lerror (DuplicateColumn colName)
-    Just [ColumnSchema tId cId cName _] ->
+    [] -> lift $ lerror (ColumnNotFound colName)
+    x : y : xs -> lift $ lerror (DuplicateColumn colName)
+    [ColumnSchema tId cId cName _] ->
       appendColumnTable tId cId cName
 addColumnByName (Just tableName) colName Nothing = do
   tId <- lift $ lookupTableIdByName tableName

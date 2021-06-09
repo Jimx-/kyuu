@@ -64,10 +64,18 @@ execSimpleStmt stmt = case parseSQLStatement stmt of
 
 prog1 :: (StorageBackend m) => Kyuu m ()
 prog1 = do
-  execSimpleStmt
-    "create table emp (empno int, ename varchar, sal double, deptno int)"
-  execSimpleStmt "insert into emp (empno, ename) values (0, 'hello')"
-  execSimpleStmt "select empno, ename from emp"
+  -- execSimpleStmt
+  --   "create table emp (empno int, ename varchar, sal double, deptno int)"
+  -- execSimpleStmt
+  --   "create table dept (id int, name varchar)"
+  -- execSimpleStmt "insert into emp (empno, ename, deptno) values (0, 'hello', 1)"
+  -- execSimpleStmt "insert into emp (empno, ename, deptno) values (1, 'world', 2)"
+  -- execSimpleStmt "insert into dept (id, name) values (1, 'dept_1')"
+  -- execSimpleStmt "insert into dept (id, name) values (2, 'dept_2')"
+  -- execSimpleStmt "select empno, ename, deptno from emp"
+  -- execSimpleStmt "select id, name from dept"
+
+  execSimpleStmt "select empno from emp, dept where deptno = id"
 
 prog2 :: (StorageBackend m) => Kyuu m ()
 prog2 = do
@@ -81,7 +89,7 @@ main = do
   db <- sqCreateDB "testdb"
   case db of
     (Just db) -> do
-      threads <- runKyuu def [prog2]
+      threads <- runKyuu def [prog1]
       void $
         forConcurrently threads $ \thread ->
           runSuziQWithDB db thread
