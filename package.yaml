@@ -36,6 +36,8 @@ dependencies:
 - transformers-base
 - data-has
 - data-default-class
+- hashable
+- multimap
 
 library:
   source-dirs: src

@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
@@ -15,6 +16,7 @@ where
 
 import qualified Data.ByteString as B
 import Data.Char (chr)
+import Data.Hashable
 import Data.List (elemIndex)
 import Data.Monoid
 import Data.Store
@@ -30,7 +32,7 @@ data Value
   | VDouble Double
   | VString String
   | VIntList [Int]
-  deriving (Eq, Generic, Typeable)
+  deriving (Eq, Generic, Typeable, Hashable)
 
 instance Store Value
 

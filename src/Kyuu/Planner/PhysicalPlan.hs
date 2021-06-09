@@ -46,6 +46,14 @@ data PhysicalPlan
         leftChild :: PhysicalPlan,
         rightChild :: PhysicalPlan
       }
+  | HashJoin
+      { joinType :: L.JoinType,
+        leftKeys :: [SqlExpr Value],
+        rightKeys :: [SqlExpr Value],
+        tupleDesc :: TupleDesc,
+        leftChild :: PhysicalPlan,
+        rightChild :: PhysicalPlan
+      }
   | CreateTable {tableSchema :: TableSchema}
   | Insert
       { tableId :: OID,

@@ -2,10 +2,15 @@
 
 module Kyuu.Executor.Operators
   ( Operator (..),
+    HashTable,
     getOpTupleDesc,
+    mkHashJoinOp,
+    lookupHashTable,
   )
 where
 
+import Data.Hashable
+import qualified Data.MultiMap as MM
 import Kyuu.Catalog.Catalog
 import Kyuu.Catalog.Schema
 import Kyuu.Core
@@ -14,6 +19,8 @@ import Kyuu.Index
 import Kyuu.Prelude
 import Kyuu.Table
 import Kyuu.Value
+
+type HashTable = MM.MultiMap Int ([Value], Tuple)
 
 data Operator m
   = TableScanOp
@@ -42,6 +49,15 @@ data Operator m
       }
   | NestLoopOp
       { joinQuals :: [SqlExpr Value],
+        tupleDesc :: TupleDesc,
+        outerInput :: Operator m,
+        innerInput :: Operator m
+      }
+  | HashJoinOp
+      { outerKeys :: [SqlExpr Value],
+        innerKeys :: [SqlExpr Value],
+        hashTable :: HashTable,
+        overflow :: [Tuple],
         tupleDesc :: TupleDesc,
         outerInput :: Operator m,
         innerInput :: Operator m
@@ -107,6 +123,18 @@ instance Show (Operator m) where
       ++ ", innerInput = "
       ++ show innerInput
       ++ "}"
+  show (HashJoinOp outerKeys innerKeys _ _ tupleDesc outerInput innerInput) =
+    "HashJoinOp {outerKeys = "
+      ++ show outerKeys
+      ++ ", innerKeys = "
+      ++ show innerKeys
+      ++ ", tupleDesc = "
+      ++ show tupleDesc
+      ++ ", outerInput = "
+      ++ show outerInput
+      ++ ", innerInput = "
+      ++ show innerInput
+      ++ "}"
   show (PrintOp printHeader tupleDesc input) =
     "PrintOp {printHeader = "
       ++ show printHeader
@@ -132,3 +160,11 @@ getOpTupleDesc :: Operator m -> TupleDesc
 getOpTupleDesc CreateTableOp {} = []
 getOpTupleDesc InsertOp {} = []
 getOpTupleDesc op = tupleDesc op
+
+mkHashJoinOp :: (StorageBackend m) => [SqlExpr Value] -> [SqlExpr Value] -> TupleDesc -> Operator m -> Operator m -> Kyuu m (Operator m)
+mkHashJoinOp outerKeys innerKeys tupleDesc outerInput innerInput = return $ HashJoinOp outerKeys innerKeys MM.empty [] tupleDesc outerInput innerInput
+
+lookupHashTable :: [Value] -> HashTable -> [Tuple]
+lookupHashTable vals ht =
+  let tuples = MM.lookup (hash vals) ht
+   in [tuple | (v, tuple) <- tuples, v == vals]

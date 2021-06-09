@@ -9,6 +9,7 @@ module Kyuu.Executor.Builder
   )
 where
 
+import Data.MultiMap
 import Kyuu.Catalog.Schema
 import Kyuu.Core
 import Kyuu.Executor.Operators
@@ -38,6 +39,10 @@ buildOperator (NestedLoopJoin _ joinQuals _ schema left right) = do
   leftOp <- buildOperator left
   rightOp <- buildOperator right
   return $ NestLoopOp joinQuals schema leftOp rightOp
+buildOperator (HashJoin _ leftKeys rightKeys schema left right) = do
+  leftOp <- buildOperator left
+  rightOp <- buildOperator right
+  mkHashJoinOp leftKeys rightKeys schema leftOp rightOp
 buildOperator (CreateTable schema) = return $ CreateTableOp schema False
 buildOperator (Insert tableId targetExprs) =
   return $ InsertOp tableId targetExprs

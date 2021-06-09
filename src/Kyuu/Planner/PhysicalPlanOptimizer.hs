@@ -1,3 +1,5 @@
+{-# LANGUAGE GADTs #-}
+
 module Kyuu.Planner.PhysicalPlanOptimizer
   ( getPhysicalPlan,
   )
@@ -33,6 +35,9 @@ genPhysicalPlans (L.Selection conds schema child) = do
 genPhysicalPlans (L.Projection exprs schema child) = do
   childPlan <- getPhysicalPlan child
   return [P.Projection exprs schema childPlan]
+genPhysicalPlans lp@L.Join {L.otherQuals = []} = do
+  hashJoin <- genHashJoin lp
+  return [hashJoin]
 genPhysicalPlans lp@L.Join {} = do
   nestedLoopJoin <- genNestedLoopJoin lp
   return [nestedLoopJoin]
@@ -46,6 +51,21 @@ genNestedLoopJoin (L.Join joinType joinQuals otherQuals schema left right) = do
       joinType
       joinQuals
       otherQuals
+      schema
+      leftPlan
+      rightPlan
+
+genHashJoin :: (StorageBackend m) => L.LogicalPlan -> Kyuu m P.PhysicalPlan
+genHashJoin (L.Join joinType joinQuals _ schema left right) = do
+  let leftKeys = map (\(BinOpExpr BEqual lhs _) -> lhs) joinQuals
+      rightKeys = map (\(BinOpExpr BEqual _ rhs) -> rhs) joinQuals
+  leftPlan <- getPhysicalPlan left
+  rightPlan <- getPhysicalPlan right
+  return $
+    P.HashJoin
+      joinType
+      leftKeys
+      rightKeys
       schema
       leftPlan
       rightPlan
