@@ -75,7 +75,7 @@ prog1 = do
   -- execSimpleStmt "select empno, ename, deptno from emp"
   -- execSimpleStmt "select id, name from dept"
 
-  execSimpleStmt "select * from emp, dept where deptno = id"
+  execSimpleStmt "select * from dept, emp where deptno = id"
 
 prog2 :: (StorageBackend m) => Kyuu m ()
 prog2 = do

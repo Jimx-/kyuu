@@ -121,38 +121,30 @@ nextTuple (ProjectionOp columns tupleDesc input) = do
     _ -> return Nothing
 
   return (newTuple, ProjectionOp columns tupleDesc newInput)
-nextTuple op@(NestLoopOp joinQuals tupleDesc outerInput innerInput) = do
+nextTuple op@(NestLoopOp joinQuals [] tupleDesc outerInput innerInput) = do
   (outerTuple, newOuter) <- nextTuple outerInput
 
   case outerTuple of
     Just outerTuple -> do
       innerOp <- rescan innerInput
-      (tuple, newInner) <-
-        fetchInnerTuple
+      (tuples, newInner) <-
+        fetchInnerTuples
           outerTuple
           joinQuals
           innerOp
+          []
 
-      case tuple of
-        Just tuple ->
-          return
-            ( Just $ sortTuple tupleDesc tuple,
-              op
-                { outerInput = newOuter,
-                  innerInput = newInner
-                }
-            )
-        Nothing ->
-          nextTuple op {outerInput = newOuter}
+      nextTuple op {overflow = tuples, outerInput = newOuter}
     Nothing -> return (Nothing, op {outerInput = newOuter})
   where
-    fetchInnerTuple ::
+    fetchInnerTuples ::
       (StorageBackend m) =>
       Tuple ->
       [SqlExpr Value] ->
       Operator m ->
-      Kyuu m (Maybe Tuple, Operator m)
-    fetchInnerTuple outerTuple joinQuals innerInput = do
+      [Tuple] ->
+      Kyuu m ([Tuple], Operator m)
+    fetchInnerTuples outerTuple joinQuals innerInput tuples = do
       (innerTuple, newInner) <- nextTuple innerInput
 
       case innerTuple of
@@ -166,19 +158,20 @@ nextTuple op@(NestLoopOp joinQuals tupleDesc outerInput innerInput) = do
                   (evalBinOpExpr BAnd)
                   (VBool True)
                   res
-          case accept of
-            (VBool True) ->
-              return (Just tuple, newInner)
-            _ ->
-              fetchInnerTuple
-                outerTuple
-                joinQuals
-                newInner
-        Nothing ->
-          fetchInnerTuple
+              newTuples = case accept of
+                (VBool True) -> tuple : tuples
+                _ -> tuples
+          fetchInnerTuples
             outerTuple
             joinQuals
             newInner
+            newTuples
+        Nothing -> return (tuples, newInner)
+nextTuple op@(NestLoopOp _ (tuple : tuples) tupleDesc _ _) = do
+  return
+    ( Just $ sortTuple tupleDesc tuple,
+      op {overflow = tuples}
+    )
 nextTuple op@(HashJoinOp outerKeys _ ht [] tupleDesc outerInput _) = do
   (outerTuple, newOuter) <- nextTuple outerInput
 

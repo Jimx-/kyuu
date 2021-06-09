@@ -4,7 +4,10 @@ module Kyuu.Executor.Operators
   ( Operator (..),
     HashTable,
     getOpTupleDesc,
+    mkNestLoopJoinOp,
     mkHashJoinOp,
+    emptyHashTable,
+    insertHashTable,
     lookupHashTable,
   )
 where
@@ -49,6 +52,7 @@ data Operator m
       }
   | NestLoopOp
       { joinQuals :: [SqlExpr Value],
+        overflow :: [Tuple],
         tupleDesc :: TupleDesc,
         outerInput :: Operator m,
         innerInput :: Operator m
@@ -113,7 +117,7 @@ instance Show (Operator m) where
       ++ ", input = "
       ++ show input
       ++ "}"
-  show (NestLoopOp joinQuals tupleDesc outerInput innerInput) =
+  show (NestLoopOp joinQuals _ tupleDesc outerInput innerInput) =
     "NestLoopOp {joinQuals = "
       ++ show joinQuals
       ++ ", tupleDesc = "
@@ -161,8 +165,17 @@ getOpTupleDesc CreateTableOp {} = []
 getOpTupleDesc InsertOp {} = []
 getOpTupleDesc op = tupleDesc op
 
-mkHashJoinOp :: (StorageBackend m) => [SqlExpr Value] -> [SqlExpr Value] -> TupleDesc -> Operator m -> Operator m -> Kyuu m (Operator m)
-mkHashJoinOp outerKeys innerKeys tupleDesc outerInput innerInput = return $ HashJoinOp outerKeys innerKeys MM.empty [] tupleDesc outerInput innerInput
+mkNestLoopJoinOp :: (StorageBackend m) => [SqlExpr Value] -> TupleDesc -> Operator m -> Operator m -> Operator m
+mkNestLoopJoinOp joinQuals = NestLoopOp joinQuals []
+
+mkHashJoinOp :: (StorageBackend m) => [SqlExpr Value] -> [SqlExpr Value] -> TupleDesc -> Operator m -> Operator m -> Operator m
+mkHashJoinOp outerKeys innerKeys = HashJoinOp outerKeys innerKeys MM.empty []
+
+emptyHashTable :: HashTable
+emptyHashTable = MM.empty
+
+insertHashTable :: [Value] -> Tuple -> HashTable -> HashTable
+insertHashTable vals tuple = MM.insert (hash vals) (vals, tuple)
 
 lookupHashTable :: [Value] -> HashTable -> [Tuple]
 lookupHashTable vals ht =
