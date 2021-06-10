@@ -241,10 +241,11 @@ transformScalarExpr (S.StringLit _ _ lit) = return $ ValueExpr (VString lit)
 
 transformSelectStmt ::
   (StorageBackend m) => S.Statement -> Analyzer m ParserNode
-transformSelectStmt (S.SelectStatement S.Select {S.qeSetQuantifier = setQuantifier, S.qeSelectList = selectClause, S.qeFrom = fromClause, S.qeWhere = whereClause}) =
+transformSelectStmt (S.SelectStatement S.Select {S.qeSetQuantifier = setQuantifier, S.qeSelectList = selectClause, S.qeFrom = fromClause, S.qeWhere = whereClause, S.qeGroupBy = groupByClause}) =
   do
     let distinct = isDistinctSelect setQuantifier
     fromItem <- transformFromClause fromClause
+    groupBys <- transformGroupByClause groupByClause
     selectItems <- transformSelectClause selectClause
     whereExpr <- forM whereClause $
       \cond -> transformScalarExpr cond
@@ -321,6 +322,18 @@ transformFromItemAlias (S.TRSimple [S.Name _ tableName]) alias = do
       targetTable <- lift $ openTable id
       appendRangeTable (RteTable id tableName)
     Nothing -> lift $ lerror $ TableWithNameNotFound tableName
+
+transformGroupByClause ::
+  (StorageBackend m) =>
+  [S.GroupingExpr] ->
+  Analyzer m [SqlExpr Value]
+transformGroupByClause groupBys = concat <$> mapM transformGroupBy groupBys
+
+transformGroupBy ::
+  (StorageBackend m) =>
+  S.GroupingExpr ->
+  Analyzer m [SqlExpr Value]
+transformGroupBy (S.SimpleGroup expr) = (: []) <$> transformScalarExpr expr
 
 transformDDL :: (StorageBackend m) => S.Statement -> Analyzer m ParserNode
 transformDDL (S.CreateTable [S.Name _ tableName] elts) = do

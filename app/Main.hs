@@ -75,7 +75,16 @@ prog1 = do
   -- execSimpleStmt "select empno, ename, deptno from emp"
   -- execSimpleStmt "select id, name from dept"
 
-  execSimpleStmt "select * from dept, emp where deptno = id"
+  -- execSimpleStmt "select * from dept, emp where deptno = id"
+  -- execSimpleStmt
+  --   "create table agg (grp int, val int)"
+  -- execSimpleStmt "insert into agg (grp, val) values (0, 10)"
+  -- execSimpleStmt "insert into agg (grp, val) values (0, 20)"
+  -- execSimpleStmt "insert into agg (grp, val) values (1, 100)"
+  -- execSimpleStmt "insert into agg (grp, val) values (1, 200)"
+  -- execSimpleStmt "select * from pg_class where oid > 1"
+
+  execSimpleStmt "select grp from agg group by grp"
 
 prog2 :: (StorageBackend m) => Kyuu m ()
 prog2 = do

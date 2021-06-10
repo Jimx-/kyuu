@@ -7,7 +7,7 @@ where
 
 import Control.Monad
 import Data.List (find)
-import Data.Maybe (isJust)
+import Data.Maybe (catMaybes, isJust)
 import Kyuu.Core
 import Kyuu.Expression
 import qualified Kyuu.Planner.LogicalPlan as L
@@ -27,11 +27,9 @@ optimizeLogicalPlan ::
   Kyuu m L.LogicalPlan
 optimizeLogicalPlan L.PlanBuilderState {..} lp = do
   let rules =
-        sequence
+        catMaybes
           [ whenMaybe
               _needPredicatePushDown
               predicatePushDownOptimize
           ]
-  case rules of
-    Nothing -> return lp
-    Just rules -> foldM (flip ($)) lp rules
+  foldM (flip ($)) lp rules
