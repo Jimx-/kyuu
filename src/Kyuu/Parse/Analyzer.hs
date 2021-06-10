@@ -4,7 +4,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Kyuu.Parse.Analyzer
-  ( Query (..),
+  ( AggregateDesc (..),
+    Query (..),
     ParserNode (..),
     RangeTableEntry (..),
     RangeTable,
@@ -44,7 +45,7 @@ type RangeTable = [RangeTableEntry]
 
 -- | Reference to range table entry in the analyzer state
 newtype RangeTableRef = RangeTableRef Int
-  deriving (Show)
+  deriving (Eq, Show)
 
 data ColumnTableEntry = ColumnTableEntry OID OID String
   deriving (Show)
@@ -52,12 +53,22 @@ data ColumnTableEntry = ColumnTableEntry OID OID String
 data ColumnConstraint = ColumnConstraint
   deriving (Eq, Show)
 
+data AggregateDesc = AggregateDesc
+  { aggType :: AggregateType,
+    aggArgs :: [SqlExpr Value]
+  }
+  deriving (Show)
+
+newtype AggregateRef = AggregateRef Int
+  deriving (Eq, Show)
+
 data ParserNode
   = SelectStmt
       { isDistinct :: Bool,
         selectItems :: [SqlExpr Value],
         fromItem :: RangeTableRef,
-        whereExpr :: Maybe (SqlExpr Value)
+        whereExpr :: Maybe (SqlExpr Value),
+        groupBys :: [SqlExpr Value]
       }
   | CreateTableStmt
       { tableName :: String,
@@ -74,7 +85,8 @@ data ParserNode
 data AnalyzerState = AnalyzerState
   { _namePool :: [String],
     _rangeTable :: RangeTable,
-    _columnTable :: [ColumnTableEntry]
+    _columnTable :: [ColumnTableEntry],
+    _aggregates :: [AggregateDesc]
   }
   deriving (Show)
 
@@ -82,7 +94,8 @@ type Analyzer m a = StateT AnalyzerState (Kyuu m) a
 
 data Query = Query
   { _parseTree :: ParserNode,
-    _rangeTable :: RangeTable
+    _rangeTable :: RangeTable,
+    _aggregates :: [AggregateDesc]
   }
   deriving (Show)
 
@@ -95,7 +108,7 @@ isDistinctSelect :: S.SetQuantifier -> Bool
 isDistinctSelect S.Distinct = True
 isDistinctSelect _ = False
 
-initAnalyzerState = AnalyzerState [] [] []
+initAnalyzerState = AnalyzerState [] [] [] []
 
 appendRangeTable ::
   (MonadState AnalyzerState m) => RangeTableEntry -> m RangeTableRef
@@ -191,13 +204,25 @@ lookupColumnByName name =
         (\(ColumnTableEntry _ _ colName) -> colName == name)
         (state ^. columnTable_)
 
+addAggregate :: (MonadState AnalyzerState m) => AggregateType -> [SqlExpr Value] -> m AggregateRef
+addAggregate typ args = do
+  state <- get
+  let agg = AggregateDesc typ args
+      ref = AggregateRef $ length (state ^. aggregates_)
+  modify . over aggregates_ $ \tbl -> tbl ++ [agg]
+  return ref
+
 runAnalyzer :: Analyzer m a -> AnalyzerState -> Kyuu m (a, AnalyzerState)
 runAnalyzer = runStateT
 
 analyzeParseTree :: (StorageBackend m) => S.Statement -> Kyuu m Query
 analyzeParseTree stmt = do
   (n, s) <- runAnalyzer (transformTopLevelStmt stmt) initAnalyzerState
-  return $ Query n (s ^. rangeTable_)
+  return $
+    Query
+      n
+      (s ^. rangeTable_)
+      (s ^. aggregates_)
 
 transformTopLevelStmt ::
   (StorageBackend m) => S.Statement -> Analyzer m ParserNode
@@ -207,6 +232,9 @@ transformStmt :: (StorageBackend m) => S.Statement -> Analyzer m ParserNode
 transformStmt stmt@S.SelectStatement {} = transformSelectStmt stmt
 transformStmt stmt@S.CreateTable {} = transformDDL stmt
 transformStmt stmt@S.Insert {} = transformInsert stmt
+
+transformScalarExprs :: (StorageBackend m) => [S.ScalarExpr] -> Analyzer m [SqlExpr Value]
+transformScalarExprs = mapM transformScalarExpr
 
 transformScalarExpr ::
   (StorageBackend m) => S.ScalarExpr -> Analyzer m (SqlExpr Value)
@@ -238,6 +266,13 @@ transformScalarExpr (S.NumLit lit) = return $ ValueExpr (readNumLit lit)
     readNumLit lit =
       if '.' `elem` lit then VDouble (read lit) else VInt (read lit)
 transformScalarExpr (S.StringLit _ _ lit) = return $ ValueExpr (VString lit)
+transformScalarExpr (S.App [S.Name _ funcName] args) = do
+  argExprs <- transformScalarExprs args
+  case aggregateFromName funcName of
+    Just aggType -> do
+      (AggregateRef idx) <- addAggregate aggType argExprs
+      return $ ColumnIndexExpr idx
+    _ -> return $ FuncAppExpr funcName argExprs
 
 transformSelectStmt ::
   (StorageBackend m) => S.Statement -> Analyzer m ParserNode
@@ -245,11 +280,11 @@ transformSelectStmt (S.SelectStatement S.Select {S.qeSetQuantifier = setQuantifi
   do
     let distinct = isDistinctSelect setQuantifier
     fromItem <- transformFromClause fromClause
-    groupBys <- transformGroupByClause groupByClause
     selectItems <- transformSelectClause selectClause
     whereExpr <- forM whereClause $
       \cond -> transformScalarExpr cond
-    return $ SelectStmt distinct selectItems fromItem whereExpr
+    groupBys <- transformGroupByClause groupByClause
+    return $ SelectStmt distinct selectItems fromItem whereExpr groupBys
 
 transformSelectClause ::
   (StorageBackend m) =>

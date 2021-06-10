@@ -5,23 +5,11 @@ module Kyuu.Executor.Nodes.HashJoin
   )
 where
 
-import Control.Lens
-import Control.Monad.State.Lazy
-import Data.List (find)
-import Data.Map (Map)
-import qualified Data.Map as Map
-import Data.Maybe
-import Kyuu.Catalog.Catalog
-import Kyuu.Catalog.Schema
 import Kyuu.Core
-import Kyuu.Error
-import Kyuu.Executor.Builder
 import Kyuu.Executor.Iterator
 import Kyuu.Executor.Operators
 import Kyuu.Expression
-import Kyuu.Index
 import Kyuu.Prelude
-import Kyuu.Table
 import Kyuu.Value
 
 buildHashJoinOp :: (StorageBackend m) => Operator m -> Kyuu m (Operator m)

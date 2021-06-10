@@ -35,6 +35,9 @@ genPhysicalPlans (L.Selection conds schema child) = do
 genPhysicalPlans (L.Projection exprs schema child) = do
   childPlan <- getPhysicalPlan child
   return [P.Projection exprs schema childPlan]
+genPhysicalPlans (L.Aggregation aggs groupBys schema child) = do
+  childPlan <- getPhysicalPlan child
+  return [P.Aggregation aggs groupBys schema childPlan]
 genPhysicalPlans lp@L.Join {L.otherQuals = []} = do
   hashJoin <- genHashJoin lp
   return [hashJoin]

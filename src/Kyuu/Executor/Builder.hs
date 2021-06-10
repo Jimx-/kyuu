@@ -35,6 +35,9 @@ buildOperator (Selection conds schema child) = do
 buildOperator (Projection exprs schema child) = do
   childOp <- buildOperator child
   return $ ProjectionOp exprs schema childOp
+buildOperator (Aggregation aggs groupBys schema child) = do
+  childOp <- buildOperator child
+  return $ mkAggregationOp aggs groupBys schema childOp
 buildOperator (NestedLoopJoin _ joinQuals _ schema left right) = do
   leftOp <- buildOperator left
   rightOp <- buildOperator right

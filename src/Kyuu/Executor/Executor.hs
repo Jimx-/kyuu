@@ -17,6 +17,7 @@ import Kyuu.Core
 import Kyuu.Error
 import Kyuu.Executor.Builder
 import Kyuu.Executor.Iterator
+import Kyuu.Executor.Nodes.Aggregation
 import Kyuu.Executor.Nodes.HashJoin
 import Kyuu.Executor.Nodes.IndexScan
 import Kyuu.Executor.Operators
@@ -56,6 +57,9 @@ open op@SelectionOp {input = input} = do
 open op@ProjectionOp {input = input} = do
   newInput <- open input
   return op {input = newInput}
+open op@AggregationOp {input = input} = do
+  newInput <- open input
+  buildAggregationOp op {input = newInput}
 open op@NestLoopOp {outerInput = outerInput, innerInput = innerInput} = do
   newOuter <- open outerInput
   newInner <- open innerInput

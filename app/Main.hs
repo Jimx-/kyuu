@@ -84,7 +84,7 @@ prog1 = do
   -- execSimpleStmt "insert into agg (grp, val) values (1, 200)"
   -- execSimpleStmt "select * from pg_class where oid > 1"
 
-  execSimpleStmt "select grp from agg group by grp"
+  execSimpleStmt "select grp, max(val) + min(val), count(1) from agg group by grp"
 
 prog2 :: (StorageBackend m) => Kyuu m ()
 prog2 = do

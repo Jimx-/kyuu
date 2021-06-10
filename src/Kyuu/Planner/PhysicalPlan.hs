@@ -38,6 +38,12 @@ data PhysicalPlan
         tupleDesc :: TupleDesc,
         child :: PhysicalPlan
       }
+  | Aggregation
+      { aggregates :: [AggregateDesc],
+        groupBys :: [SqlExpr Value],
+        tupleDesc :: TupleDesc,
+        child :: PhysicalPlan
+      }
   | NestedLoopJoin
       { joinType :: L.JoinType,
         joinQuals :: [SqlExpr Value],
@@ -59,7 +65,7 @@ data PhysicalPlan
       { tableId :: OID,
         targetExprs :: [[SqlExpr Tuple]]
       }
-  deriving (Eq, Show)
+  deriving (Show)
 
 buildPhysicalPlanForQuery :: (StorageBackend m) => Query -> Kyuu m PhysicalPlan
 buildPhysicalPlanForQuery Query {_parseTree, _rangeTable} =

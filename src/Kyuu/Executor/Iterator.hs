@@ -121,6 +121,8 @@ nextTuple (ProjectionOp columns tupleDesc input) = do
     _ -> return Nothing
 
   return (newTuple, ProjectionOp columns tupleDesc newInput)
+nextTuple op@(AggregationOp _ _ (tuple : tuples) _ _) = return (Just tuple, op {tuples = tuples})
+nextTuple op@(AggregationOp _ _ [] _ _) = return (Nothing, op)
 nextTuple op@(NestLoopOp joinQuals [] tupleDesc outerInput innerInput) = do
   (outerTuple, newOuter) <- nextTuple outerInput
 

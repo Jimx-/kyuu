@@ -56,7 +56,13 @@ data LogicalPlan
         leftChild :: LogicalPlan,
         rightChild :: LogicalPlan
       }
-  deriving (Eq, Show)
+  | Aggregation
+      { aggregates :: [AggregateDesc],
+        groupBys :: [SqlExpr Value],
+        tupleDesc :: TupleDesc,
+        childPlan :: LogicalPlan
+      }
+  deriving (Show)
 
 newtype PlanBuilderState = PlanBuilderState
   { _needPredicatePushDown :: Bool
@@ -83,18 +89,23 @@ isOptimizableQuery _ = False
 
 buildLogicalPlan ::
   (StorageBackend m) => Query -> Kyuu m (LogicalPlan, PlanBuilderState)
-buildLogicalPlan Query {_parseTree, _rangeTable} =
-  runPlanBuilder $ buildStmt _parseTree _rangeTable
+buildLogicalPlan Query {_parseTree, _rangeTable, _aggregates} =
+  runPlanBuilder $ buildStmt _parseTree _rangeTable _aggregates
 
 buildStmt ::
   (StorageBackend m) =>
   ParserNode ->
   RangeTable ->
+  [AggregateDesc] ->
   PlanBuilder m LogicalPlan
-buildStmt SelectStmt {selectItems, fromItem, whereExpr} rangeTable = do
+buildStmt SelectStmt {selectItems, fromItem, whereExpr, groupBys} rangeTable aggregates = do
   ds <- buildFromItem fromItem rangeTable
   sigma <- maybeM (return ds) (buildSelectFilter ds) $ return whereExpr
-  let pi = buildProjection sigma selectItems
+  let agg =
+        if not (null groupBys) || not (null aggregates)
+          then buildAggregation sigma aggregates groupBys
+          else sigma
+  let pi = buildProjection agg selectItems
   return pi
 
 resolveRangeTableRef :: RangeTableRef -> RangeTable -> RangeTableEntry
@@ -142,6 +153,16 @@ buildSelectFilter child whereExpr = do
   setNeedPredicatePushDown
   let conditions = decomposeWhereFactors whereExpr
   return $ Selection conditions (tupleDesc child) child
+
+buildAggregation :: LogicalPlan -> [AggregateDesc] -> [SqlExpr Value] -> LogicalPlan
+buildAggregation child aggs groupBys = Aggregation aggs groupBys tupleDesc child
+  where
+    tupleDesc =
+      flip fmap groupBys $
+        \expr ->
+          ColumnDesc
+            (getOutputTableId expr)
+            (getOutputColumnId expr)
 
 buildProjection :: LogicalPlan -> [SqlExpr Value] -> LogicalPlan
 buildProjection child exprs = Projection exprs tupleDesc child

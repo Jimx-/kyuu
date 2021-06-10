@@ -2,8 +2,10 @@
 {-# LANGUAGE StandaloneDeriving #-}
 
 module Kyuu.Expression
-  ( BinOp (..),
+  ( AggregateType (..),
+    BinOp (..),
     SqlExpr (..),
+    aggregateFromName,
     getBinOp,
     getCommutator,
     getOutputTableId,
@@ -19,8 +21,17 @@ import Kyuu.Core
 import Kyuu.Prelude
 import Kyuu.Value
 
+data AggregateType
+  = AggAverage
+  | AggCount
+  | AggMax
+  | AggMin
+  | AggSum
+  deriving (Eq, Show)
+
 data BinOp
   = BAdd
+  | BMinus
   | BAnd
   | BEqual
   | BLessThan
@@ -30,17 +41,27 @@ data BinOp
   deriving (Eq, Show)
 
 data SqlExpr t where
+  ColumnIndexExpr :: Int -> SqlExpr Value
   ColumnRefExpr :: OID -> OID -> SqlExpr Value
   ColumnAssignExpr :: OID -> OID -> SqlExpr Value -> SqlExpr Tuple
   BinOpExpr :: BinOp -> SqlExpr Value -> SqlExpr Value -> SqlExpr Value
   ValueExpr :: Value -> SqlExpr Value
+  FuncAppExpr :: String -> [SqlExpr Value] -> SqlExpr Value
 
 deriving instance (Eq t) => Eq (SqlExpr t)
 
 deriving instance (Show t) => Show (SqlExpr t)
 
+aggregateFromName :: String -> Maybe AggregateType
+aggregateFromName "avg" = Just AggAverage
+aggregateFromName "count" = Just AggCount
+aggregateFromName "sum" = Just AggSum
+aggregateFromName "max" = Just AggMax
+aggregateFromName "min" = Just AggMin
+
 getBinOp :: String -> BinOp
 getBinOp "+" = BAdd
+getBinOp "-" = BMinus
 getBinOp "and" = BAnd
 getBinOp "=" = BEqual
 getBinOp "<" = BLessThan
@@ -54,10 +75,12 @@ getCommutator BGreaterThan = Just BLessThan
 getCommutator _ = Nothing
 
 getOutputTableId :: SqlExpr Value -> OID
+getOutputTableId (ColumnIndexExpr _) = -1
 getOutputTableId (ColumnRefExpr tId _) = tId
 getOutputTableId _ = 0
 
 getOutputColumnId :: SqlExpr Value -> OID
+getOutputColumnId (ColumnIndexExpr idx) = idx
 getOutputColumnId (ColumnRefExpr _ cId) = cId
 getOutputColumnId _ = 0
 
@@ -70,6 +93,7 @@ isSargableExpr (ColumnRefExpr _ _) = True
 isSargableExpr (ValueExpr _) = True
 
 evalBinOpExpr :: BinOp -> Value -> Value -> Value
+evalBinOpExpr BAdd (VInt l) (VInt r) = VInt (l + r)
 evalBinOpExpr BAdd (VDouble l) (VDouble r) = VDouble (l + r)
 evalBinOpExpr BAnd (VBool l) (VBool r) = VBool (l && r)
 evalBinOpExpr BEqual (VInt l) (VInt r) = VBool (l == r)
@@ -82,6 +106,10 @@ evalBinOpExpr BGreaterThan (VDouble l) (VDouble r) = VBool (l > r)
 evalBinOpExpr BGreaterThan (VString l) (VString r) = VBool (l > r)
 
 evalExpr :: (StorageBackend m) => SqlExpr t -> Tuple -> Kyuu m t
+evalExpr (ColumnIndexExpr idx) (Tuple _ vds) = do
+  if idx >= length vds
+    then return VNull
+    else return $ vds !! idx
 evalExpr (ColumnRefExpr tableId colId) (Tuple [] _) = return VNull
 evalExpr expr@(ColumnRefExpr tableId colId) (Tuple (ColumnDesc tableId' colId' : tds) (v : vds)) =
   if tableId == tableId' && colId == colId'

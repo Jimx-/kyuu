@@ -4,6 +4,7 @@ module Kyuu.Executor.Operators
   ( Operator (..),
     HashTable,
     getOpTupleDesc,
+    mkAggregationOp,
     mkNestLoopJoinOp,
     mkHashJoinOp,
     emptyHashTable,
@@ -19,6 +20,7 @@ import Kyuu.Catalog.Schema
 import Kyuu.Core
 import Kyuu.Expression
 import Kyuu.Index
+import Kyuu.Parse.Analyzer
 import Kyuu.Prelude
 import Kyuu.Table
 import Kyuu.Value
@@ -47,6 +49,13 @@ data Operator m
       }
   | ProjectionOp
       { columns :: [SqlExpr Value],
+        tupleDesc :: TupleDesc,
+        input :: Operator m
+      }
+  | AggregationOp
+      { aggregates :: [AggregateDesc],
+        groupBys :: [SqlExpr Value],
+        tuples :: [Tuple],
         tupleDesc :: TupleDesc,
         input :: Operator m
       }
@@ -117,6 +126,16 @@ instance Show (Operator m) where
       ++ ", input = "
       ++ show input
       ++ "}"
+  show (AggregationOp aggs groupBys _ tupleDesc input) =
+    "AggregationOp {aggregates = "
+      ++ show aggs
+      ++ ", groupBys = "
+      ++ show groupBys
+      ++ ", tupleDesc = "
+      ++ show tupleDesc
+      ++ ", input = "
+      ++ show input
+      ++ "}"
   show (NestLoopOp joinQuals _ tupleDesc outerInput innerInput) =
     "NestLoopOp {joinQuals = "
       ++ show joinQuals
@@ -164,6 +183,9 @@ getOpTupleDesc :: Operator m -> TupleDesc
 getOpTupleDesc CreateTableOp {} = []
 getOpTupleDesc InsertOp {} = []
 getOpTupleDesc op = tupleDesc op
+
+mkAggregationOp :: (StorageBackend m) => [AggregateDesc] -> [SqlExpr Value] -> TupleDesc -> Operator m -> Operator m
+mkAggregationOp aggs groupBys = AggregationOp aggs groupBys []
 
 mkNestLoopJoinOp :: (StorageBackend m) => [SqlExpr Value] -> TupleDesc -> Operator m -> Operator m -> Operator m
 mkNestLoopJoinOp joinQuals = NestLoopOp joinQuals []
