@@ -32,7 +32,13 @@ buildIndexPaths (L.DataSource tableId _ sArgs indexInfos _) = flip map indexInfo
       concatMap (toList . matchClauseToIndexCol indexTableId colNum) clauses
 
     matchClauseToIndexCol :: OID -> OID -> SqlExpr Value -> Maybe (SqlExpr Value)
-    matchClauseToIndexCol tableId colNum (BinOpExpr op lhs rhs) = asum [(\lhs -> BinOpExpr op lhs rhs) <$> matchClauseToIndexCol tableId colNum lhs, (\commutator rhs -> BinOpExpr commutator rhs lhs) <$> getCommutator op <*> matchClauseToIndexCol tableId colNum rhs]
+    matchClauseToIndexCol tableId colNum (BinOpExpr op lhs rhs) =
+      asum
+        [ (\lhs -> BinOpExpr op lhs rhs)
+            <$> matchClauseToIndexCol tableId colNum lhs,
+          (\commutator rhs -> BinOpExpr commutator rhs lhs)
+            <$> getCommutator op <*> matchClauseToIndexCol tableId colNum rhs
+        ]
     matchClauseToIndexCol tableId colNum colRef@(ColumnRefExpr tableId' colNum')
       | tableId == tableId' && colNum == colNum' = Just colRef
     matchClauseToIndexCol _ _ _ = Nothing

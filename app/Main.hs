@@ -89,7 +89,6 @@ prog1 = do
   -- execSimpleStmt "insert into emp values (7900, 'James', 'Clerk', 950, 30)"
   -- execSimpleStmt "insert into emp values (7934, 'Miller', 'Clerk', 1300, 10)"
 
-  execSimpleStmt "select ename, dname, job, empno, loc from emp, dept where emp.deptno = dept.deptno"
   execSimpleStmt "select dname, count(1) from dept, emp where emp.deptno = dept.deptno and sal > 2000 group by dname"
 
 -- execSimpleStmt "insert into emp (empno, ename, deptno) values (0, 'hello', 1)"
