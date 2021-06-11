@@ -75,6 +75,16 @@ data Operator m
         outerInput :: Operator m,
         innerInput :: Operator m
       }
+  | OffsetOp
+      { offset :: Int,
+        tupleDesc :: TupleDesc,
+        input :: Operator m
+      }
+  | LimitOp
+      { limit :: Int,
+        tupleDesc :: TupleDesc,
+        input :: Operator m
+      }
   | PrintOp
       { printHeader :: Bool,
         tupleDesc :: TupleDesc,
@@ -157,6 +167,22 @@ instance Show (Operator m) where
       ++ show outerInput
       ++ ", innerInput = "
       ++ show innerInput
+      ++ "}"
+  show (OffsetOp offset tupleDesc input) =
+    "OffsetOp {offset = "
+      ++ show offset
+      ++ ", tupleDesc = "
+      ++ show tupleDesc
+      ++ ", input = "
+      ++ show input
+      ++ "}"
+  show (LimitOp limit tupleDesc input) =
+    "LimitOp {limit = "
+      ++ show limit
+      ++ ", tupleDesc = "
+      ++ show tupleDesc
+      ++ ", input = "
+      ++ show input
       ++ "}"
   show (PrintOp printHeader tupleDesc input) =
     "PrintOp {printHeader = "

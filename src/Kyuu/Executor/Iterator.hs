@@ -188,6 +188,22 @@ nextTuple op@(HashJoinOp _ _ _ (tuple : tuples) tupleDesc _ _) =
     ( Just $ sortTuple tupleDesc tuple,
       op {overflow = tuples}
     )
+nextTuple op@(LimitOp 0 _ _) = return (Nothing, op)
+nextTuple op@(LimitOp lim _ input) = do
+  (tuple, newInput) <- nextTuple input
+
+  case tuple of
+    Just tuple -> return (Just tuple, op {limit = lim - 1, input = newInput})
+    _ -> return (Nothing, op {limit = 0, input = newInput})
+nextTuple op@(OffsetOp 0 _ input) = do
+  (tuple, newInput) <- nextTuple input
+  return (tuple, op {input = newInput})
+nextTuple op@(OffsetOp offset _ input) = do
+  (tuple, newInput) <- nextTuple input
+
+  case tuple of
+    Just _ -> nextTuple op {offset = offset - 1, input = newInput}
+    _ -> return (Nothing, op {input = newInput})
 nextTuple op@(CreateTableOp schema done) =
   if done
     then return (Nothing, op)

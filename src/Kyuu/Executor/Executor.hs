@@ -68,6 +68,12 @@ open op@HashJoinOp {outerInput = outerInput, innerInput = innerInput} = do
   newOuter <- open outerInput
   newInner <- open innerInput
   buildHashJoinOp op {outerInput = newOuter, innerInput = newInner}
+open op@LimitOp {input = input} = do
+  newInput <- open input
+  return op {input = newInput}
+open op@OffsetOp {input = input} = do
+  newInput <- open input
+  return op {input = newInput}
 open op@PrintOp {input = input} = do
   newInput <- open input
   return op {input = newInput}

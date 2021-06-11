@@ -46,6 +46,12 @@ buildOperator (HashJoin _ leftKeys rightKeys schema left right) = do
   leftOp <- buildOperator left
   rightOp <- buildOperator right
   return $ mkHashJoinOp leftKeys rightKeys schema leftOp rightOp
+buildOperator (Offset offset schema child) = do
+  childOp <- buildOperator child
+  return $ OffsetOp offset schema childOp
+buildOperator (Limit limit schema child) = do
+  childOp <- buildOperator child
+  return $ LimitOp limit schema childOp
 buildOperator (CreateTable schema) = return $ CreateTableOp schema False
 buildOperator (Insert tableId targetExprs) =
   return $ InsertOp tableId targetExprs

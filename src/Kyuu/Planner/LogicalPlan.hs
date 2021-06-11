@@ -62,6 +62,16 @@ data LogicalPlan
         tupleDesc :: TupleDesc,
         childPlan :: LogicalPlan
       }
+  | Limit
+      { limit :: Int,
+        tupleDesc :: TupleDesc,
+        childPlan :: LogicalPlan
+      }
+  | Offset
+      { offset :: Int,
+        tupleDesc :: TupleDesc,
+        childPlan :: LogicalPlan
+      }
   deriving (Show)
 
 newtype PlanBuilderState = PlanBuilderState
@@ -98,7 +108,7 @@ buildStmt ::
   RangeTable ->
   [AggregateDesc] ->
   PlanBuilder m LogicalPlan
-buildStmt SelectStmt {selectItems, fromItem, whereExpr, groupBys, havingExpr} rangeTable aggregates = do
+buildStmt SelectStmt {selectItems, fromItem, whereExpr, groupBys, havingExpr, offset, limit} rangeTable aggregates = do
   ds <- buildFromItem fromItem rangeTable
   sigma <- maybeM (return ds) (buildSelectFilter ds) $ return whereExpr
   let agg =
@@ -107,7 +117,9 @@ buildStmt SelectStmt {selectItems, fromItem, whereExpr, groupBys, havingExpr} ra
           else sigma
   sigma' <- maybeM (return agg) (buildSelectFilter agg) $ return havingExpr
   let pi = buildProjection sigma' selectItems
-  return pi
+      off = maybe pi (buildOffset pi) offset
+      lim = maybe off (buildLimit off) limit
+  return lim
 
 resolveRangeTableRef :: RangeTableRef -> RangeTable -> RangeTableEntry
 resolveRangeTableRef (RangeTableRef r) table = table !! r
@@ -154,6 +166,11 @@ buildSelectFilter child whereExpr = do
   setNeedPredicatePushDown
   let conditions = decomposeWhereFactors whereExpr
   return $ Selection conditions (tupleDesc child) child
+  where
+    decomposeWhereFactors :: SqlExpr Value -> [SqlExpr Value]
+    decomposeWhereFactors (BinOpExpr BAnd lhs rhs) =
+      decomposeWhereFactors lhs ++ decomposeWhereFactors rhs
+    decomposeWhereFactors expr = [expr]
 
 buildAggregation :: LogicalPlan -> [AggregateDesc] -> [SqlExpr Value] -> LogicalPlan
 buildAggregation child aggs groupBys = Aggregation aggs groupBys tupleDesc child
@@ -175,7 +192,8 @@ buildProjection child exprs = Projection exprs tupleDesc child
             (getOutputTableId expr)
             (getOutputColumnId expr)
 
-decomposeWhereFactors :: SqlExpr Value -> [SqlExpr Value]
-decomposeWhereFactors (BinOpExpr BAnd lhs rhs) =
-  decomposeWhereFactors lhs ++ decomposeWhereFactors rhs
-decomposeWhereFactors expr = [expr]
+buildLimit :: LogicalPlan -> Int -> LogicalPlan
+buildLimit child limit = Limit limit (tupleDesc child) child
+
+buildOffset :: LogicalPlan -> Int -> LogicalPlan
+buildOffset child offset = Offset offset (tupleDesc child) child

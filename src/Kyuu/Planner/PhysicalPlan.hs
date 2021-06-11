@@ -60,6 +60,16 @@ data PhysicalPlan
         leftChild :: PhysicalPlan,
         rightChild :: PhysicalPlan
       }
+  | Limit
+      { limit :: Int,
+        tupleDesc :: TupleDesc,
+        child :: PhysicalPlan
+      }
+  | Offset
+      { offset :: Int,
+        tupleDesc :: TupleDesc,
+        child :: PhysicalPlan
+      }
   | CreateTable {tableSchema :: TableSchema}
   | Insert
       { tableId :: OID,

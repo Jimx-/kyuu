@@ -99,35 +99,15 @@ predicatePushDown lp@(L.Join _ joinQuals otherQuals _ left right) preds = do
                  hasColumn rtId rcId rightSchema
                ) of
             (True, True) ->
-              groupJoinQuals
-                ps
-                left
-                right
-                (p : accEq)
-                accLeft
-                accRight
-                accOther
+              groupJoinQuals ps left right (p : accEq) accLeft accRight accOther
             _ ->
-              case ( hasColumn
-                       rtId
-                       rcId
-                       leftSchema,
-                     hasColumn
-                       ltId
-                       lcId
-                       rightSchema
-                   ) of
+              case (hasColumn rtId rcId leftSchema, hasColumn ltId lcId rightSchema) of
                 (True, True) ->
                   groupJoinQuals
                     ps
                     left
                     right
-                    ( BinOpExpr
-                        BEqual
-                        rExpr
-                        lExpr :
-                      accEq
-                    )
+                    (BinOpExpr BEqual rExpr lExpr : accEq)
                     accLeft
                     accRight
                     accOther
@@ -141,11 +121,10 @@ predicatePushDown lp@(L.Join _ joinQuals otherQuals _ left right) preds = do
                     accRight
                     (p : accOther)
     groupJoinQuals (p : ps) left right accEq accLeft accRight accOther =
-      groupJoinQuals
-        ps
-        left
-        right
-        accEq
-        accLeft
-        accRight
-        (p : accOther)
+      groupJoinQuals ps left right accEq accLeft accRight (p : accOther)
+predicatePushDown lp@(L.Offset _ _ child) preds = do
+  (newChild, newPreds) <- predicatePushDown child preds
+  return (lp {L.childPlan = newChild}, newPreds)
+predicatePushDown lp@(L.Limit _ _ child) preds = do
+  (newChild, newPreds) <- predicatePushDown child preds
+  return (lp {L.childPlan = newChild}, newPreds)

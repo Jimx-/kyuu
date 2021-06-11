@@ -44,19 +44,18 @@ genPhysicalPlans lp@L.Join {L.otherQuals = []} = do
 genPhysicalPlans lp@L.Join {} = do
   nestedLoopJoin <- genNestedLoopJoin lp
   return [nestedLoopJoin]
+genPhysicalPlans lp@(L.Limit limit schema child) = do
+  childPlan <- getPhysicalPlan child
+  return [P.Limit limit schema childPlan]
+genPhysicalPlans lp@(L.Offset offset schema child) = do
+  childPlan <- getPhysicalPlan child
+  return [P.Offset offset schema childPlan]
 
 genNestedLoopJoin :: (StorageBackend m) => L.LogicalPlan -> Kyuu m P.PhysicalPlan
 genNestedLoopJoin (L.Join joinType joinQuals otherQuals schema left right) = do
   leftPlan <- getPhysicalPlan left
   rightPlan <- getPhysicalPlan right
-  return $
-    P.NestedLoopJoin
-      joinType
-      joinQuals
-      otherQuals
-      schema
-      leftPlan
-      rightPlan
+  return $ P.NestedLoopJoin joinType joinQuals otherQuals schema leftPlan rightPlan
 
 genHashJoin :: (StorageBackend m) => L.LogicalPlan -> Kyuu m P.PhysicalPlan
 genHashJoin (L.Join joinType joinQuals _ schema left right) = do
@@ -64,11 +63,4 @@ genHashJoin (L.Join joinType joinQuals _ schema left right) = do
       rightKeys = map (\(BinOpExpr BEqual _ rhs) -> rhs) joinQuals
   leftPlan <- getPhysicalPlan left
   rightPlan <- getPhysicalPlan right
-  return $
-    P.HashJoin
-      joinType
-      leftKeys
-      rightKeys
-      schema
-      leftPlan
-      rightPlan
+  return $ P.HashJoin joinType leftKeys rightKeys schema leftPlan rightPlan
