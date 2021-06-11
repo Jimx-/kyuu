@@ -20,6 +20,7 @@ import Kyuu.Planner.PhysicalPlanOptimizer
 import Kyuu.Planner.RuleBasedOptimizer
 import Kyuu.Prelude
 import Kyuu.Storage.SuziQ.Backend
+import System.IO
 import Text.Pretty.Simple (pPrint)
 
 execSimpleStmt :: (StorageBackend m) => String -> Kyuu m ()
@@ -115,13 +116,22 @@ prog2 = do
 
 -- execSimpleStmt "select * from pg_attribute, pg_class"
 
+cli :: (StorageBackend m) => Kyuu m ()
+cli = do
+  liftIO $ putStr "Q> "
+  liftIO $ hFlush stdout
+  stmt <- liftIO getLine
+  execSimpleStmt stmt
+
+  cli
+
 main :: IO ()
 main = do
   sqInit
   db <- sqCreateDB "testdb"
   case db of
     (Just db) -> do
-      threads <- runKyuu def [prog1]
+      threads <- runKyuu def [cli]
       void $
         forConcurrently threads $ \thread ->
           runSuziQWithDB db thread

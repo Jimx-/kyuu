@@ -1,0 +1,43 @@
+#+TITLE: Kyuu
+
+Kyuu (pronounced as "Q") is a SQL query processor written as a learning project in pure Haskell. It is integrated with the [[https://github.com/Jimx-/suziQ][suziQ]] storage engine to provide a single-node disk-based relational database management system (RDBMS). Kyuu supports various features commonly found in an SQL database, including:
+- SQL interface (filters, projects, joins and aggregations).
+- [[https://dl.acm.org/doi/10.1109/69.273032][Volcano]]-style query execution and rule-based optimizations.
+- Pluggable storage backend integration through a storage interface.
+- ACID-compliant transaction support with the MVCC-based storage engine.
+
+** Usage
+A [[https://www.rust-lang.org/tools/install][Rust toolchain]] and [[https://docs.haskellstack.org/en/stable/install_and_upgrade/][Stack]] are required for building the storage backend and the query processor. After they are installed, Kyuu can be built with:
+#+BEGIN_SRC shell
+git clone https://github.com/Jimx-/kyuu.git
+cd kyuu
+git submodule update --init
+cd lib/suziQ
+cargo build --release
+cd ../..
+stack build
+#+END_SRC
+
+Alternatively, Docker can be used to build Kyuu without installing dependencies on the host system:
+#+BEGIN_SRC shell
+cd docker
+docker build . -t kyuu
+#+END_SRC
+
+After building Kyuu, it can be started with Stack:
+#+BEGIN_SRC shell
+$ stack run
+Q> create table dept (deptno int, dname varchar, loc varchar);
+Q> insert into dept (deptno, dname, loc) values (10, 'Accouting', 'New York');
+Q> insert into dept (deptno, dname, loc) values (20, 'Research', 'Dallas');
+Q> insert into dept (deptno, dname, loc) values (30, 'Sales', 'Chicago');
+Q> insert into dept (deptno, dname, loc) values (40, 'Operations', 'Boston');
+Q> select * from dept;
+deptno|dname|loc
+10|"Accouting"|"New York"
+20|"Research"|"Dallas"
+30|"Sales"|"Chicago"
+40|"Operations"|"Boston"
+#+END_SRC
+** Documentation
+- [[https://github.com/Jimx-/kyuu/blob/master/docs/query.org][Query walkthrough]] - how queries are processed internally.
