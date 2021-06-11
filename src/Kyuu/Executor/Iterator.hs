@@ -7,7 +7,7 @@ where
 
 import Control.Lens
 import Control.Monad.State.Lazy
-import Data.List (find)
+import Data.List (find, intercalate, intersperse)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
@@ -256,26 +256,19 @@ nextTuple (PrintOp printHeader tupleDesc input) = do
   newTuple <- case inputTuple of
     Just tuple@(Tuple _ vs) -> do
       when printHeader $ do
-        forM_ tupleDesc $
+        headers <- forM tupleDesc $
           \(ColumnDesc tableId colId) -> do
             schema <-
               lookupTableColumnById
                 tableId
                 colId
             case schema of
-              Nothing ->
-                liftIO $
-                  putStr
-                    "(null)\t"
+              Nothing -> return "(null)"
               (Just (ColumnSchema _ _ name _)) ->
-                liftIO $
-                  putStr $
-                    name
-                      ++ "\t"
-        liftIO $ putStrLn " "
+                return name
+        liftIO $ putStrLn $ intercalate "|" headers
 
-      forM_ vs $ \val -> liftIO $ putStr $ show val ++ "\t"
-      liftIO $ putStrLn " "
+      liftIO $ putStrLn $ intercalate "|" $ map show vs
 
       return $ Just tuple
     _ -> return Nothing

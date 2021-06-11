@@ -5,6 +5,8 @@ module Kyuu.Planner.Rules.PredicatePushDown (predicatePushDownOptimize) where
 import Control.Monad
 import Data.List (find)
 import Data.Maybe (isJust)
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Kyuu.Core
 import Kyuu.Expression
 import Kyuu.Planner.DataSource
@@ -121,7 +123,19 @@ predicatePushDown lp@(L.Join _ joinQuals otherQuals _ left right) preds = do
                     accRight
                     (p : accOther)
     groupJoinQuals (p : ps) left right accEq accLeft accRight accOther =
-      groupJoinQuals ps left right accEq accLeft accRight (p : accOther)
+      let leftSchema = L.getLogicalTupleDesc left
+          rightSchema = L.getLogicalTupleDesc right
+          columns = traverseExpr extractColumn p
+       in if all (\(tId, cId) -> hasColumn tId cId leftSchema) columns
+            then groupJoinQuals ps left right accEq (p : accLeft) accRight accOther
+            else
+              if all (\(tId, cId) -> hasColumn tId cId rightSchema) columns
+                then groupJoinQuals ps left right accEq accLeft (p : accRight) accOther
+                else groupJoinQuals ps left right accEq accLeft accRight (p : accOther)
+
+    extractColumn :: SqlExpr Value -> Set (OID, OID)
+    extractColumn (ColumnRefExpr tableId colId) = Set.singleton (tableId, colId)
+    extractColumn _ = mempty
 predicatePushDown lp@(L.Offset _ _ child) preds = do
   (newChild, newPreds) <- predicatePushDown child preds
   return (lp {L.childPlan = newChild}, newPreds)

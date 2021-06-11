@@ -193,7 +193,7 @@ buildProjection child exprs = Projection exprs tupleDesc child
             (getOutputColumnId expr)
 
 buildLimit :: LogicalPlan -> Int -> LogicalPlan
-buildLimit child limit = Limit limit (tupleDesc child) child
+buildLimit child limit = Limit limit (getLogicalTupleDesc child) child
 
 buildOffset :: LogicalPlan -> Int -> LogicalPlan
-buildOffset child offset = Offset offset (tupleDesc child) child
+buildOffset child offset = Offset offset (getLogicalTupleDesc child) child

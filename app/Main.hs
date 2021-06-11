@@ -60,31 +60,55 @@ execSimpleStmt stmt = case parseSQLStatement stmt of
     liftIO $ putStrLn "=============================="
     executePlan execPlan
     finishTransaction
-  _ -> return ()
+  _ -> lerror (SyntaxError "Cannot parse query statement")
 
 prog1 :: (StorageBackend m) => Kyuu m ()
 prog1 = do
   -- execSimpleStmt
-  --   "create table emp (empno int, ename varchar, sal double, deptno int)"
+  --   "create table emp (empno int, ename varchar, job varchar, sal double, deptno int)"
   -- execSimpleStmt
-  --   "create table dept (id int, name varchar)"
-  -- execSimpleStmt "insert into emp (empno, ename, deptno) values (0, 'hello', 1)"
-  -- execSimpleStmt "insert into emp (empno, ename, deptno) values (1, 'world', 2)"
-  -- execSimpleStmt "insert into dept (id, name) values (1, 'dept_1')"
-  -- execSimpleStmt "insert into dept (id, name) values (2, 'dept_2')"
-  -- execSimpleStmt "select empno, ename, deptno from emp"
-  -- execSimpleStmt "select id, name from dept"
+  --   "create table dept (deptno int, dname varchar, loc varchar)"
 
-  -- execSimpleStmt "select * from dept, emp where deptno = id"
-  -- execSimpleStmt
-  --   "create table agg (grp int, val int)"
-  -- execSimpleStmt "insert into agg (grp, val) values (0, 10)"
-  -- execSimpleStmt "insert into agg (grp, val) values (0, 20)"
-  -- execSimpleStmt "insert into agg (grp, val) values (1, 100)"
-  -- execSimpleStmt "insert into agg (grp, val) values (1, 200)"
-  -- execSimpleStmt "select * from pg_class where oid > 1"
+  -- execSimpleStmt "insert into dept (deptno, dname, loc) values (10, 'Accouting', 'New York')"
+  -- execSimpleStmt "insert into dept (deptno, dname, loc) values (20, 'Research', 'Dallas')"
+  -- execSimpleStmt "insert into dept (deptno, dname, loc) values (30, 'Sales', 'Chicago')"
+  -- execSimpleStmt "insert into dept (deptno, dname, loc) values (40, 'Operations', 'Boston')"
 
-  execSimpleStmt "select grp, max(val) + min(val), count(1) from agg group by grp limit 100 offset 1"
+  -- execSimpleStmt "insert into emp values (7839, 'King', 'President', 5000, 10)"
+  -- execSimpleStmt "insert into emp values (7698, 'Blake', 'Manager', 2850, 30)"
+  -- execSimpleStmt "insert into emp values (7782, 'Clark', 'Manager', 2459, 10)"
+  -- execSimpleStmt "insert into emp values (7566, 'Jones', 'Manager', 2975, 20)"
+  -- execSimpleStmt "insert into emp values (7788, 'Scott', 'Analyst', 3000, 20)"
+  -- execSimpleStmt "insert into emp values (7902, 'Ford', 'Analyst', 3000, 20)"
+  -- execSimpleStmt "insert into emp values (7369, 'Smith', 'Clerk', 800, 20)"
+  -- execSimpleStmt "insert into emp values (7499, 'Allen', 'Salesman', 1600, 30)"
+  -- execSimpleStmt "insert into emp values (7521, 'Ward', 'Salesman', 1250, 30)"
+  -- execSimpleStmt "insert into emp values (7654, 'Martin', 'Salesman', 1250, 30)"
+  -- execSimpleStmt "insert into emp values (7844, 'Turner', 'Salesman', 1500, 30)"
+  -- execSimpleStmt "insert into emp values (7876, 'Adams', 'Clerk', 1100, 20)"
+  -- execSimpleStmt "insert into emp values (7900, 'James', 'Clerk', 950, 30)"
+  -- execSimpleStmt "insert into emp values (7934, 'Miller', 'Clerk', 1300, 10)"
+
+  execSimpleStmt "select ename, dname, job, empno, loc from emp, dept where emp.deptno = dept.deptno"
+  execSimpleStmt "select dname, count(1) from dept, emp where emp.deptno = dept.deptno and sal > 2000 group by dname"
+
+-- execSimpleStmt "insert into emp (empno, ename, deptno) values (0, 'hello', 1)"
+-- execSimpleStmt "insert into emp (empno, ename, deptno) values (1, 'world', 2)"
+-- execSimpleStmt "insert into dept (id, name) values (1, 'dept_1')"
+-- execSimpleStmt "insert into dept (id, name) values (2, 'dept_2')"
+-- execSimpleStmt "select empno, ename, deptno from emp"
+-- execSimpleStmt "select id, name from dept"
+
+-- execSimpleStmt "select * from dept, emp where deptno = id"
+-- execSimpleStmt
+--   "create table agg (grp int, val int)"
+-- execSimpleStmt "insert into agg (grp, val) values (0, 10)"
+-- execSimpleStmt "insert into agg (grp, val) values (0, 20)"
+-- execSimpleStmt "insert into agg (grp, val) values (1, 100)"
+-- execSimpleStmt "insert into agg (grp, val) values (1, 200)"
+-- execSimpleStmt "select * from pg_class where oid > 1"
+
+-- execSimpleStmt "select grp, max(val) + min(val), count(1) from agg group by grp limit 100 offset 1"
 
 prog2 :: (StorageBackend m) => Kyuu m ()
 prog2 = do

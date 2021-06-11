@@ -41,9 +41,10 @@ genPhysicalPlans (L.Aggregation aggs groupBys schema child) = do
 genPhysicalPlans lp@L.Join {L.otherQuals = []} = do
   hashJoin <- genHashJoin lp
   return [hashJoin]
-genPhysicalPlans lp@L.Join {} = do
+genPhysicalPlans lp@L.Join {L.otherQuals = otherQuals, L.tupleDesc = schema} = do
   nestedLoopJoin <- genNestedLoopJoin lp
-  return [nestedLoopJoin]
+  let selection = P.Selection otherQuals schema nestedLoopJoin
+  return [selection]
 genPhysicalPlans lp@(L.Limit limit schema child) = do
   childPlan <- getPhysicalPlan child
   return [P.Limit limit schema childPlan]

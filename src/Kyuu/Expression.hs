@@ -13,6 +13,7 @@ module Kyuu.Expression
     isSargableExpr,
     evalExpr,
     evalBinOpExpr,
+    traverseExpr,
     compareTuple,
   )
 where
@@ -123,6 +124,13 @@ evalExpr (BinOpExpr op left right) tuple = do
   rval <- evalExpr right tuple
   return $ evalBinOpExpr op lval rval
 evalExpr (ValueExpr v) _ = return v
+
+traverseExpr :: (Monoid (m a)) => (SqlExpr t -> m a) -> SqlExpr t -> m a
+traverseExpr f expr@(BinOpExpr _ left right) =
+  f expr
+    <> traverseExpr f left
+    <> traverseExpr f right
+traverseExpr f expr = f expr
 
 compareTuple :: Tuple -> Tuple -> Ordering
 compareTuple (Tuple _ (v1 : vs1)) (Tuple _ (v2 : vs2)) =
