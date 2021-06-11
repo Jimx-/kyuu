@@ -38,6 +38,9 @@ predicatePushDown lp@(L.Selection conds schema child) preds = do
             },
           []
         )
+predicatePushDown lp@(L.Aggregation _ _ _ child) preds = do
+  (newChild, _) <- predicatePushDown child []
+  return (lp {L.childPlan = newChild}, preds)
 predicatePushDown lp@(L.DataSource tableId tableName sArgs indexPaths schema) preds = do
   let (pushed, rejected) = groupWith isSargableExpr preds [] []
       newSearchArgs = sArgs ++ pushed

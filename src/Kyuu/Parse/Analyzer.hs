@@ -1,5 +1,6 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TemplateHaskell #-}
 
@@ -68,7 +69,10 @@ data ParserNode
         selectItems :: [SqlExpr Value],
         fromItem :: RangeTableRef,
         whereExpr :: Maybe (SqlExpr Value),
-        groupBys :: [SqlExpr Value]
+        groupBys :: [SqlExpr Value],
+        havingExpr :: Maybe (SqlExpr Value),
+        offset :: Maybe Int,
+        limit :: Maybe Int
       }
   | CreateTableStmt
       { tableName :: String,
@@ -276,7 +280,7 @@ transformScalarExpr (S.App [S.Name _ funcName] args) = do
 
 transformSelectStmt ::
   (StorageBackend m) => S.Statement -> Analyzer m ParserNode
-transformSelectStmt (S.SelectStatement S.Select {S.qeSetQuantifier = setQuantifier, S.qeSelectList = selectClause, S.qeFrom = fromClause, S.qeWhere = whereClause, S.qeGroupBy = groupByClause}) =
+transformSelectStmt (S.SelectStatement S.Select {S.qeSetQuantifier = setQuantifier, S.qeSelectList = selectClause, S.qeFrom = fromClause, S.qeWhere = whereClause, S.qeGroupBy = groupByClause, S.qeHaving = havingClause, qeOffset = offsetExpr, qeFetchFirst = limitExpr}) =
   do
     let distinct = isDistinctSelect setQuantifier
     fromItem <- transformFromClause fromClause
@@ -284,7 +288,20 @@ transformSelectStmt (S.SelectStatement S.Select {S.qeSetQuantifier = setQuantifi
     whereExpr <- forM whereClause $
       \cond -> transformScalarExpr cond
     groupBys <- transformGroupByClause groupByClause
-    return $ SelectStmt distinct selectItems fromItem whereExpr groupBys
+    havingExpr <- forM havingClause $
+      \expr -> transformScalarExpr expr
+    offset <-
+      forM offsetExpr $
+        transformScalarExpr >=> extractOffset
+    limit <-
+      forM limitExpr $
+        transformScalarExpr >=> extractOffset
+
+    return $ SelectStmt distinct selectItems fromItem whereExpr groupBys havingExpr offset limit
+  where
+    extractOffset :: (StorageBackend m) => SqlExpr Value -> Analyzer m Int
+    extractOffset (ValueExpr (VInt offset)) = return offset
+    extractOffset _ = lift $ lerror (SyntaxError "Invalid offset argument")
 
 transformSelectClause ::
   (StorageBackend m) =>

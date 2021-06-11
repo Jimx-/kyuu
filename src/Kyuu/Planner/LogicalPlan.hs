@@ -98,14 +98,15 @@ buildStmt ::
   RangeTable ->
   [AggregateDesc] ->
   PlanBuilder m LogicalPlan
-buildStmt SelectStmt {selectItems, fromItem, whereExpr, groupBys} rangeTable aggregates = do
+buildStmt SelectStmt {selectItems, fromItem, whereExpr, groupBys, havingExpr} rangeTable aggregates = do
   ds <- buildFromItem fromItem rangeTable
   sigma <- maybeM (return ds) (buildSelectFilter ds) $ return whereExpr
   let agg =
         if not (null groupBys) || not (null aggregates)
           then buildAggregation sigma aggregates groupBys
           else sigma
-  let pi = buildProjection agg selectItems
+  sigma' <- maybeM (return agg) (buildSelectFilter agg) $ return havingExpr
+  let pi = buildProjection sigma' selectItems
   return pi
 
 resolveRangeTableRef :: RangeTableRef -> RangeTable -> RangeTableEntry
