@@ -1,0 +1,438 @@
+#+TITLE: Query  Walkthrough
+
+In query processing, the user-provided SQL query statement is parsed into a syntax tree, which is further transformed and optimized by the query planner before the final execution plan is obtained. The execution plan is then executed using [[https://dl.acm.org/doi/10.1109/69.273032][Volcano-style]] iteration to get the result data. The following example demonstrates how queries are processed internally in Kyuu.
+
+** Preparing data
+We will use a small [[http://www.cems.uwe.ac.uk/~pchatter/resources/html/emp_dept_data+schema.html][emp-dept]] database as a basis for the example query:
+#+BEGIN_SRC sql
+create table emp (empno int, ename varchar, job varchar, sal double, deptno int);
+create table dept (deptno int, dname varchar, loc varchar);
+
+insert into dept (deptno, dname, loc) values (10, 'Accouting', 'New York');
+insert into dept (deptno, dname, loc) values (20, 'Research', 'Dallas');
+insert into dept (deptno, dname, loc) values (30, 'Sales', 'Chicago');
+insert into dept (deptno, dname, loc) values (40, 'Operations', 'Boston');
+
+insert into emp values (7839, 'King', 'President', 5000, 10);
+insert into emp values (7698, 'Blake', 'Manager', 2850, 30);
+insert into emp values (7782, 'Clark', 'Manager', 2459, 10);
+insert into emp values (7566, 'Jones', 'Manager', 2975, 20);
+insert into emp values (7788, 'Scott', 'Analyst', 3000, 20);
+insert into emp values (7902, 'Ford', 'Analyst', 3000, 20);
+insert into emp values (7369, 'Smith', 'Clerk', 800, 20);
+insert into emp values (7499, 'Allen', 'Salesman', 1600, 30);
+insert into emp values (7521, 'Ward', 'Salesman', 1250, 30);
+insert into emp values (7654, 'Martin', 'Salesman', 1250, 30);
+insert into emp values (7844, 'Turner', 'Salesman', 1500, 30);
+insert into emp values (7876, 'Adams', 'Clerk', 1100, 20);
+insert into emp values (7900, 'James', 'Clerk', 950, 30);
+insert into emp values (7934, 'Miller', 'Clerk', 1300, 10);
+#+END_SRC
+
+The example query joins the two tables, groups the rows by the department and then counts the number of employees in each department:
+#+BEGIN_SRC sql
+select dname, count(1) from dept, emp where emp.deptno = dept.deptno group by dname
+#+END_SRC
+The query involves various features provided by the query processor such as joins and aggregations.
+
+** Query tree
+The query statement is first parsed into an abstract syntax tree (AST) by [[https://hackage.haskell.org/package/simple-sql-parser][simple-sql-parser]] which captures the syntax of the query with a tree representation:
+#+BEGIN_SRC haskell
+SelectStatement
+    ( Select
+        { qeSetQuantifier = SQDefault
+        , qeSelectList =
+            [
+                ( Iden [ Name Nothing "dname" ]
+                , Nothing
+                )
+            ,
+                ( App [ Name Nothing "count" ] [ NumLit "1" ]
+                , Nothing
+                )
+            ]
+        , qeFrom =
+            [ TRSimple [ Name Nothing "dept" ]
+            , TRSimple [ Name Nothing "emp" ]
+            ]
+        , qeWhere = Just
+            ( BinOp
+                ( BinOp
+                    ( Iden
+                        [ Name Nothing "emp"
+                        , Name Nothing "deptno"
+                        ]
+                    ) [ Name Nothing "=" ]
+                    ( Iden
+                        [ Name Nothing "dept"
+                        , Name Nothing "deptno"
+                        ]
+                    )
+                ) [ Name Nothing "and" ]
+                ( BinOp
+                    ( Iden [ Name Nothing "sal" ] ) [ Name Nothing ">" ] ( NumLit "2000" )
+                )
+            )
+        , qeGroupBy =
+            [ SimpleGroup
+                ( Iden [ Name Nothing "dname" ] )
+            ]
+        , qeHaving = Nothing
+        , qeOrderBy = []
+        , qeOffset = Nothing
+        , qeFetchFirst = Nothing
+        }
+    )
+#+END_SRC
+The parser will only verify that the syntax of the query is correct, e.g. keywords, operators and names are in the correct places they are meant to be, and report error if any invalid syntax is detected. However, it does not perform any semantic checking on the query statement. For example, it does not know whether the names (e.g. ~emp~) actually reference tables and columns that exist in the database. For this reason, the AST needs to be transformed and verified by the analyzer (~Kyuu.Parse.Analyzer~) to produce the query tree before it can be used to generate execution plans.
+
+#+BEGIN_SRC sql
+Query
+    { _parseTree = SelectStmt
+        { isDistinct = False
+        , selectItems =
+            [ ColumnRefExpr 16385 2
+            , ColumnIndexExpr 0
+            ]
+        , fromItem = RangeTableRef 2
+        , whereExpr = Just
+            ( BinOpExpr BAnd
+                ( BinOpExpr BEqual ( ColumnRefExpr 16384 5 ) ( ColumnRefExpr 16385 1 ) )
+                ( BinOpExpr BGreaterThan ( ColumnRefExpr 16384 4 ) ( ValueExpr 2000 ) )
+            )
+        , groupBys = [ ColumnRefExpr 16385 2 ]
+        , havingExpr = Nothing
+        , offset = Nothing
+        , limit = Nothing
+        }
+    , _rangeTable =
+        [ RteTable
+            { tableId = 16385
+            , tableName = "dept"
+            }
+        , RteTable
+            { tableId = 16384
+            , tableName = "emp"
+            }
+        , RteJoin
+            { left = RangeTableRef 0
+            , right = RangeTableRef 1
+            }
+        ]
+    , _aggregates =
+        [ AggregateDesc
+            { aggType = AggCount
+            , aggArgs = [ ValueExpr 1 ]
+            }
+        ]
+    }
+#+END_SRC
+The analyzer first scans the ~FROM~ clause of the query to find all tables referenced by the query. It looks up the tables  in the catalog and resolves them into their corresponding table IDs (~emp~ -> 16384 and ~dept~ -> 16385). The table information are collected into the *range table*, where each entry represents one relation (table) that appears in the query. It will also record table joins in the range table if there is any (~RteJoin~). After that, any table name in the query syntax tree will be replaced with a reference to the table's entry in the range table. If there is any table name that does not exist in the database, the analyzer will report an error.
+
+Similarly, each column in the database is defined by the ID of the table that it belongs to and a column ID within the table. Any column name in the query will be looked up in the catalog and resolved to its ID pair. After that, the columns will be replaced with a ~ColumnRefExpr~ expression with its ID pair. For example, ~emp.deptno~ is the 5th column in the ~emp~ table (16384). Thus, it is replaced with ~(ColumnRefExpr 16384 5)~.
+
+With these two steps, we can guarantee that all table and column names in the query reference to valid objects in the database. The analyzer will also extract all aggregate functions in the query. In the example, there is only one aggregate function ~count(1)~, which is converted into an aggregate function descriptor in the ~_aggregates~ list:
+#+BEGIN_SRC haskell
+_aggregates =
+  [ AggregateDesc
+    { aggType = AggCount
+    , aggArgs = [ ValueExpr 1 ]
+    }
+  ]
+#+END_SRC
+Each aggregate function will also be assigned an index which represents the slot it will appear in the output tuple produced by the aggregation node. In this case, ~count(1)~ is mapped to slot 0, and its occurence in the select target list will be replaced with a ~ColumnIndexExpr~, i.e. ~ColumnIndexExpr 0~ in the ~selectItems~ list.
+
+** Logical plan
+After the query tree is obtained, it is converted into a logical plan. The logical plan is a general description of the steps are required to execute the query. However, unlike physical plans, a logical plan will not specify /how/ these steps should be executed. For example, a base table appears in the query will be converted into a ~DataSource~ node, but it does not specify whether the table should be scanned with an index or which index should be used. Similarly, a ~Join~ node only records the tables involved in the table join but does not specify which join algorithm (e.g. nested loop join or hash join) should be used.
+
+#+BEGIN_SRC haskell
+Projection
+    { exprs =
+        [ ColumnRefExpr 16385 2
+        , ColumnIndexExpr 0
+        ]
+    , tupleDesc =
+        [ ColumnDesc 16385 2
+        , ColumnDesc ( -1 ) 0
+        ]
+    , childPlan = Aggregation
+        { aggregates =
+            [ AggregateDesc
+                { aggType = AggCount
+                , aggArgs = [ ValueExpr 1 ]
+                }
+            ]
+        , groupBys = [ ColumnRefExpr 16385 2 ]
+        , tupleDesc = [ ColumnDesc 16385 2 ]
+        , childPlan = Selection
+            { conditions =
+                [ BinOpExpr BEqual ( ColumnRefExpr 16384 5 ) ( ColumnRefExpr 16385 1 )
+                , BinOpExpr BGreaterThan ( ColumnRefExpr 16384 4 ) ( ValueExpr 2000 )
+                ]
+            , tupleDesc =
+                [ ColumnDesc 16385 1
+                , ColumnDesc 16385 2
+                , ColumnDesc 16385 3
+                , ColumnDesc 16384 1
+                , ColumnDesc 16384 2
+                , ColumnDesc 16384 3
+                , ColumnDesc 16384 4
+                , ColumnDesc 16384 5
+                ]
+            , childPlan = Join
+                { joinType = InnerJoin
+                , joinQuals = []
+                , otherQuals = []
+                , tupleDesc =
+                    [ ColumnDesc 16385 1
+                    , ColumnDesc 16385 2
+                    , ColumnDesc 16385 3
+                    , ColumnDesc 16384 1
+                    , ColumnDesc 16384 2
+                    , ColumnDesc 16384 3
+                    , ColumnDesc 16384 4
+                    , ColumnDesc 16384 5
+                    ]
+                , leftChild = DataSource
+                    { tableId = 16385
+                    , tableName = "dept"
+                    , searchArgs = []
+                    , indexInfos = []
+                    , tupleDesc =
+                        [ ColumnDesc 16385 1
+                        , ColumnDesc 16385 2
+                        , ColumnDesc 16385 3
+                        ]
+                    }
+                , rightChild = DataSource
+                    { tableId = 16384
+                    , tableName = "emp"
+                    , searchArgs = []
+                    , indexInfos = []
+                    , tupleDesc =
+                        [ ColumnDesc 16384 1
+                        , ColumnDesc 16384 2
+                        , ColumnDesc 16384 3
+                        , ColumnDesc 16384 4
+                        , ColumnDesc 16384 5
+                        ]
+                    }
+                }
+            }
+        }
+    }
+#+END_SRC
+A logical plan is represented by a tree of nodes. The node can either be a source node that produces tuple from the underlying storage or an internal node that takes an input tuple from its child nodes and applies transformations on the tuple to produce the output. Each node also has a ~tupleDesc~ that describes the layout of columns in its output tuple. Each base table is converted into a ~DataSource~ node whose ~tupleDesc~ includes all columns in the table. A ~Join~ node takes input from its two children and concatenates the input tuples to form the joined tuple. A ~Selection~ node filters input tuples based on its ~conditions~ by evaluating the conditions on its input tuples. An ~Aggregation~ node records all aggregate functions extracted by the analyzer and the expressions for grouping the tuples. Finally, a ~Projection~ node projects its input tuple to a subset and updates the ~tupleDesc~ correspondingly.
+
+** Rule-based optimizations (RBOs)
+After the logical plan is built, a set of rule-based optimizations (RBOs) will be run on the logical plan. One important RBO is /Predicate Pushdown/. It tries to push the predicates in the plan down to deeper levels so unnecessary tuples can be filtered out early during the execution.
+
+In the example, there are two predicates (~emp.deptno = dept.deptno~ and ~sal > 2000~) as represented by the ~Selection~ node. The resulting logical plan after Predicate Pushdown is shown below:
+
+#+BEGIN_SRC haskell
+Projection
+    { exprs =
+        [ ColumnRefExpr 16385 2
+        , ColumnIndexExpr 0
+        ]
+    , tupleDesc =
+        [ ColumnDesc 16385 2
+        , ColumnDesc ( -1 ) 0
+        ]
+    , childPlan = Aggregation
+        { aggregates =
+            [ AggregateDesc
+                { aggType = AggCount
+                , aggArgs = [ ValueExpr 1 ]
+                }
+            ]
+        , groupBys = [ ColumnRefExpr 16385 2 ]
+        , tupleDesc = [ ColumnDesc 16385 2 ]
+        , childPlan = Join
+            { joinType = InnerJoin
+            , joinQuals =
+                [ BinOpExpr BEqual ( ColumnRefExpr 16385 1 ) ( ColumnRefExpr 16384 5 ) ]
+            , otherQuals = []
+            , tupleDesc =
+                [ ColumnDesc 16385 1
+                , ColumnDesc 16385 2
+                , ColumnDesc 16385 3
+                , ColumnDesc 16384 1
+                , ColumnDesc 16384 2
+                , ColumnDesc 16384 3
+                , ColumnDesc 16384 4
+                , ColumnDesc 16384 5
+                ]
+            , leftChild = DataSource
+                { tableId = 16385
+                , tableName = "dept"
+                , searchArgs = []
+                , indexInfos = []
+                , tupleDesc =
+                    [ ColumnDesc 16385 1
+                    , ColumnDesc 16385 2
+                    , ColumnDesc 16385 3
+                    ]
+                }
+            , rightChild = DataSource
+                { tableId = 16384
+                , tableName = "emp"
+                , searchArgs =
+                    [ BinOpExpr BGreaterThan ( ColumnRefExpr 16384 4 ) ( ValueExpr 2000 ) ]
+                , indexInfos = []
+                , tupleDesc =
+                    [ ColumnDesc 16384 1
+                    , ColumnDesc 16384 2
+                    , ColumnDesc 16384 3
+                    , ColumnDesc 16384 4
+                    , ColumnDesc 16384 5
+                    ]
+                }
+            }
+        }
+    }
+#+END_SRC
+The join predicate (~emp.deptno = dept.deptno~) is pushed down to the ~Join~ node to help determine the keys for building the hash table later. The other predicate ~sal > 2000~ belongs to the ~emp~ table is pushed down to the ~DataSource~ node for the table as a /search argument/ (SARG). This predicate can be sent to the backend storage later so that it can skips reading unnecessary tuples from the disk before they enter the query processor. It can also be converted into an index range to reduce the number of tuples that need to be scanned. After the predicates are pushed down, the ~Selection~ node is removed because there is no any other outstanding predicate that cannot be processed by the deeper level nodes.
+
+** Physical Plan
+The logical plan describes the steps required for the query but it does not specify how the steps should be executed. In this stage, each node in the logical plan will be replaced with several candidate physical nodes that implement it. For example, a ~DataSource~ can be implemented by a ~TableScan~ node that performs a full table scan or some ~IndexScan~  nodes that scan only a subset of the tuples based on the available indexes. The costs of different physical  implementations are estimated and the optimal one is selected. Similarly, a logical ~Join~ node can be implemented by a ~HashJoin~ node or a ~NestedLoopJoin~ node. Here, ~HashJoin~ is selected, and the keys for the build and the probe phase are determined (~leftKeys~ and ~rightKeys~). The ~HashJoin~ node will use ~ColumnRefExpr 16385 1~  (~dept.deptno~) as the build key to build the hash table and ~ColumnRefExpr 16384 5~ (~emp.deptno~) as the probe key to find matches.
+
+#+BEGIN_SRC haskell
+Projection
+    { exprs =
+        [ ColumnRefExpr 16385 2
+        , ColumnIndexExpr 0
+        ]
+    , tupleDesc =
+        [ ColumnDesc 16385 2
+        , ColumnDesc ( -1 ) 0
+        ]
+    , child = Aggregation
+        { aggregates =
+            [ AggregateDesc
+                { aggType = AggCount
+                , aggArgs = [ ValueExpr 1 ]
+                }
+            ]
+        , groupBys = [ ColumnRefExpr 16385 2 ]
+        , tupleDesc = [ ColumnDesc 16385 2 ]
+        , child = HashJoin
+            { joinType = InnerJoin
+            , leftKeys = [ ColumnRefExpr 16385 1 ]
+            , rightKeys = [ ColumnRefExpr 16384 5 ]
+            , tupleDesc =
+                [ ColumnDesc 16385 1
+                , ColumnDesc 16385 2
+                , ColumnDesc 16385 3
+                , ColumnDesc 16384 1
+                , ColumnDesc 16384 2
+                , ColumnDesc 16384 3
+                , ColumnDesc 16384 4
+                , ColumnDesc 16384 5
+                ]
+            , leftChild = TableScan
+                { tableId = 16385
+                , tableName = "dept"
+                , filters = []
+                , tupleDesc =
+                    [ ColumnDesc 16385 1
+                    , ColumnDesc 16385 2
+                    , ColumnDesc 16385 3
+                    ]
+                }
+            , rightChild = TableScan
+                { tableId = 16384
+                , tableName = "emp"
+                , filters =
+                    [ BinOpExpr BGreaterThan ( ColumnRefExpr 16384 4 ) ( ValueExpr 2000 ) ]
+                , tupleDesc =
+                    [ ColumnDesc 16384 1
+                    , ColumnDesc 16384 2
+                    , ColumnDesc 16384 3
+                    , ColumnDesc 16384 4
+                    , ColumnDesc 16384 5
+                    ]
+                }
+            }
+        }
+    }
+#+END_SRC
+** Execution Plan
+Finally, the physical plan is translated to the execution plan. The execution plan is almost a direct copy of the physical plan except that it also maintains information required during the execution. For example, the hash table of a ~HashJoin~ node and the table iterator of the underlying storage for a ~TableScan~ node.
+
+#+BEGIN_SRC haskell
+ExecutionPlan
+    { _root = PrintOp
+        { printHeader = True
+        , tupleDesc =
+            [ ColumnDesc 16385 2
+            , ColumnDesc ( -1 ) 0
+            ]
+        , input = ProjectionOp
+            { columns =
+                [ ColumnRefExpr 16385 2
+                , ColumnIndexExpr 0
+                ]
+            , tupleDesc =
+                [ ColumnDesc 16385 2
+                , ColumnDesc ( -1 ) 0
+                ]
+            , input = AggregationOp
+                { aggregates =
+                    [ AggregateDesc
+                        { aggType = AggCount
+                        , aggArgs = [ ValueExpr 1 ]
+                        }
+                    ]
+                , groupBys = [ ColumnRefExpr 16385 2 ]
+                , tupleDesc = [ ColumnDesc 16385 2 ]
+                , input = HashJoinOp
+                    { outerKeys = [ ColumnRefExpr 16385 1 ]
+                    , innerKeys = [ ColumnRefExpr 16384 5 ]
+                    , tupleDesc =
+                        [ ColumnDesc 16385 1
+                        , ColumnDesc 16385 2
+                        , ColumnDesc 16385 3
+                        , ColumnDesc 16384 1
+                        , ColumnDesc 16384 2
+                        , ColumnDesc 16384 3
+                        , ColumnDesc 16384 4
+                        , ColumnDesc 16384 5
+                        ]
+                    , outerInput = TableScanOp
+                        { tableId = 16385
+                        , filters = []
+                        , tupleDesc =
+                            [ ColumnDesc 16385 1
+                            , ColumnDesc 16385 2
+                            , ColumnDesc 16385 3
+                            ]
+                        }
+                    , innerInput = TableScanOp
+                        { tableId = 16384
+                        , filters =
+                            [ BinOpExpr BGreaterThan ( ColumnRefExpr 16384 4 ) ( ValueExpr 2000 ) ]
+                        , tupleDesc =
+                            [ ColumnDesc 16384 1
+                            , ColumnDesc 16384 2
+                            , ColumnDesc 16384 3
+                            , ColumnDesc 16384 4
+                            , ColumnDesc 16384 5
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+#+END_SRC
+The execution plan is ready to be executed to get the final result data.
+
+** Volcano execution
+The execution plan is executed with the Volcano execution model. In each iteration,  the execution plan generates one tuple until all tuples are drained. Each operator in the execution plan implements a ~nextTuple~ function, which produces the next tuple in an iteration. For ~TableScan~ nodes, the ~nextTuple~ function simply increments the table iterator of the underlying storage to fetch the next tuple. For internal nodes, the ~nextTuple~ function recursively calls the ~nextTuple~ function on its child nodes to get the input tuples. After that, the nodes perform corresponding transformations on the input tuples to generate the output tuple that is propagated as input to its parent node. Finally, the executor fetches tuples from the root node of the execution plan as the result data.
+
+#+BEGIN_EXAMPLE
+"Research"|3
+"Accouting"|2
+"Sales"|1
+#+END_EXAMPLE
