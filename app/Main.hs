@@ -128,7 +128,7 @@ cli = do
 main :: IO ()
 main = do
   sqInit
-  db <- sqCreateDB "testdb"
+  db <- sqCreateDB "127.0.0.1:9605"
   case db of
     (Just db) -> do
       threads <- runKyuu def [cli]

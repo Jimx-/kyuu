@@ -1,3 +1,6 @@
 [submodule "lib/suziQ"]
 	path = lib/suziQ
 	url = https://github.com/Jimx-/suziQ.git
+[submodule "lib/ddq"]
+	path = lib/ddq
+	url = https://github.com/Jimx-/ddq.git
