@@ -46,7 +46,7 @@ class (MonadBaseControl IO m, MonadIO m) => StorageBackend m where
   getTupleData :: TupleType m -> m B.ByteString
   createCheckpoint :: m ()
   getNextOid :: m OID
-  insertIndex :: IndexType m -> B.ByteString -> TupleSlotType m -> m ()
+  insertIndex :: TransactionType m -> IndexType m -> B.ByteString -> TupleSlotType m -> m ()
   beginIndexScan :: TransactionType m -> IndexType m -> TableType m -> m (IndexScanIteratorType m)
   rescanIndex :: IndexScanIteratorType m -> Maybe B.ByteString -> (B.ByteString -> Maybe Bool) -> m (IndexScanIteratorType m)
   indexScanNext :: IndexScanIteratorType m -> ScanDirection -> m (IndexScanIteratorType m, Maybe (TupleType m))
@@ -75,8 +75,8 @@ instance StorageBackend m => StorageBackend (StateT s m) where
   getTupleData = lift . getTupleData
   createCheckpoint = lift createCheckpoint
   getNextOid = lift getNextOid
-  insertIndex index key tupleSlot =
-    lift $ insertIndex index key tupleSlot
+  insertIndex txn index key tupleSlot =
+    lift $ insertIndex txn index key tupleSlot
   beginIndexScan txn index table = lift $ beginIndexScan txn index table
   rescanIndex iterator startKey predicate =
     lift $ rescanIndex iterator startKey predicate
@@ -106,8 +106,8 @@ instance StorageBackend m => StorageBackend (ExceptT e m) where
   getTupleData = lift . getTupleData
   createCheckpoint = lift createCheckpoint
   getNextOid = lift getNextOid
-  insertIndex index key tupleSlot =
-    lift $ insertIndex index key tupleSlot
+  insertIndex txn index key tupleSlot =
+    lift $ insertIndex txn index key tupleSlot
   beginIndexScan txn index table = lift $ beginIndexScan txn index table
   rescanIndex iterator startKey predicate =
     lift $ rescanIndex iterator startKey predicate
@@ -137,8 +137,8 @@ instance StorageBackend m => StorageBackend (ReaderT r m) where
   getTupleData = lift . getTupleData
   createCheckpoint = lift createCheckpoint
   getNextOid = lift getNextOid
-  insertIndex index key tupleSlot =
-    lift $ insertIndex index key tupleSlot
+  insertIndex txn index key tupleSlot =
+    lift $ insertIndex txn index key tupleSlot
   beginIndexScan txn index table = lift $ beginIndexScan txn index table
   rescanIndex iterator startKey predicate =
     lift $ rescanIndex iterator startKey predicate

@@ -87,8 +87,9 @@ getIndexScanPredicate tupleDesc scanKeys buf =
 insertIndex ::
   (StorageBackend m) => Index m -> Tuple -> TupleSlot m -> Kyuu m ()
 insertIndex Index {indexStorage} key tupleSlot = do
+  txn <- getCurrentTransaction
   let keyBuf = encodeTuple key
-  S.insertIndex indexStorage keyBuf tupleSlot
+  S.insertIndex txn indexStorage keyBuf tupleSlot
 
 beginIndexScan ::
   (StorageBackend m) =>

@@ -179,7 +179,7 @@ type RawIndexKeyComparatorFunc =
   Ptr CChar -> CInt -> Ptr CChar -> CInt -> IO CInt
 
 foreign import ccall "sq_index_insert"
-  sq_index_insert :: Ptr IndexPtr -> Ptr DBPtr -> Ptr CChar -> CInt -> Ptr TupleSlotPtr -> IO ()
+  sq_index_insert :: Ptr IndexPtr -> Ptr DBPtr -> Ptr TransactionPtr -> Ptr CChar -> CInt -> Ptr TupleSlotPtr -> IO ()
 
 foreign import ccall "wrapper"
   sqWrapRawIndexKeyComparator :: RawIndexKeyComparatorFunc -> IO (FunPtr RawIndexKeyComparatorFunc)

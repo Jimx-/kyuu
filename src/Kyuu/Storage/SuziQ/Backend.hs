@@ -91,9 +91,9 @@ instance StorageBackend SuziQ where
     db <- getDB
     sqGetNextOid db
 
-  insertIndex index key tupleSlot = do
+  insertIndex txn index key tupleSlot = do
     db <- getDB
-    sqInsertIndex db index key tupleSlot
+    sqInsertIndex db index txn key tupleSlot
 
   beginIndexScan txn index table = do
     db <- getDB
@@ -314,8 +314,10 @@ sqTableFileSize table db = control $ \runInBase ->
       if size /= 0
         then return $ fromIntegral size
         else do
-          err <- lastError
-          lerror err
+          err <- tryGetLastError
+          case err of
+            (Just err) -> lerror err
+            _ -> return 0
 
 sqInsertTuple ::
   SqTable -> SqDB -> SqTransaction -> B.ByteString -> SuziQ SqTupleSlot
@@ -438,21 +440,23 @@ getIndexKeyComparator f aPtr aLen bPtr bLen = do
     (Just ord) -> return $ fromIntegral $ getOrdering ord
     _ -> return 2
 
-sqInsertIndex :: SqDB -> SqIndex -> B.ByteString -> SqTupleSlot -> SuziQ ()
-sqInsertIndex db (SqIndex _ indexPtr) key slot = control $ \runInBase ->
+sqInsertIndex :: SqDB -> SqIndex -> SqTransaction -> B.ByteString -> SqTupleSlot -> SuziQ ()
+sqInsertIndex db (SqIndex _ indexPtr) txn key slot = control $ \runInBase ->
   withForeignPtr db $ \database -> withForeignPtr indexPtr $ \indexPtr ->
-    withForeignPtr slot $ \slot ->
-      B.useAsCStringLen key $ \(keyPtr, keyLen) -> do
-        sq_index_insert
-          indexPtr
-          database
-          keyPtr
-          (fromIntegral keyLen)
-          slot
-        err <- tryGetLastError
-        runInBase $ case err of
-          Nothing -> return ()
-          (Just err) -> lerror err
+    withForeignPtr txn $ \txn ->
+      withForeignPtr slot $ \slot ->
+        B.useAsCStringLen key $ \(keyPtr, keyLen) -> do
+          sq_index_insert
+            indexPtr
+            database
+            txn
+            keyPtr
+            (fromIntegral keyLen)
+            slot
+          err <- tryGetLastError
+          runInBase $ case err of
+            Nothing -> return ()
+            (Just err) -> lerror err
 
 sqBeginIndexScan ::
   SqIndex ->
